@@ -1,0 +1,22 @@
+# Local-only project notes and tool settings
+CLAUDE.md
+.claude/
+
+# Data, recordings, experiment tracking, model artifacts
+data/
+mlruns/
+*.parquet
+*.onnx
+*.pt
+
+# Secrets
+.env
+
+# Python environment and caches
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
