@@ -2,8 +2,9 @@
 CLAUDE.md
 .claude/
 
-# Data, recordings, experiment tracking, model artifacts
-data/
+# Data, recordings, experiment tracking, model artifacts.
+# Anchored to the repo root so the src/airhand/data package is not ignored.
+/data/
 mlruns/
 *.parquet
 *.onnx
