@@ -71,6 +71,11 @@ This measures the full path from physical motion to something changing on screen
 | Median packet interval (batching) | <= 100 ms | Batching adds directly to perceived latency |
 | End-to-end latency (video) | p50 <= 150 ms | Above this, pointing feels laggy |
 
+The free Sensor Logger tier pushes once per second, so the two latency criteria can only be
+met on the paid tier (100 ms push). Per [DECISIONS D-007](DECISIONS.md), Phase 0 measures the
+free tier now, and the latency criteria are re-measured when the subscription is taken for
+live testing.
+
 ### Recommendation
 
 *Pending measurements.*

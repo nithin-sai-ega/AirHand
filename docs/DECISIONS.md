@@ -47,3 +47,18 @@ Each entry records a non-obvious choice, why it was made, and what else was cons
 ### D-006: Default ports HTTP 8000, UDP 5005
 - **Choice:** configurable in `configs/probe.yaml`.
 - **Why:** common, unprivileged ports that rarely clash with other software.
+
+### D-007: Sensor Logger free tier for now; paid tier only when live latency matters
+- **Finding:** in a first 15 s test, Sensor Logger's free tier pushed one HTTP packet per
+  second (about 600 samples each, all streams at about 100 Hz). A shorter push interval
+  (100 ms) requires a paid subscription.
+- **Choice:** use the free tier for Phase 0 measurements and for all data collection,
+  training and offline/replay evaluation (Phases 1, 3 and 4). Every sample carries its own
+  timestamp, so batching does not affect the recorded data. Subscribe only when live
+  low-latency streaming is needed (live pointer tests in Phase 2, live gestures in Phase 5)
+  and re-measure the stream at that point.
+- **Consequence:** until then, live end-to-end latency is dominated by the 1 s batching, so
+  live pointer and gesture tests are deferred or run on replayed sessions.
+- **Alternatives:** SensorLog over UDP (free; unclear whether the watch can still stream
+  live, and watch logging is described as up to about 50 Hz); other paid apps; a native
+  watchOS app (needs a Mac, which is out of scope).
