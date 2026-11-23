@@ -2,7 +2,8 @@
 
 A session folder contains:
 
-    samples.parquet   one row per raw sample, in arrival order:
+    samples/part-00000.parquet, part-00001.parquet, ...
+                      one row per raw sample, in arrival order:
                       packet_seq, recv_wall_ns, recv_mono_ns, time_ns, <one column per channel>
     meta.json         schema version, channels and units, source, subject/notes, counts
 
@@ -13,7 +14,11 @@ packet timing and latency can be analysed after the fact.
 
 Parquet stores data column by column with compression, which suits this data well: reading
 one channel for a plot touches only that column, and long runs of similar numbers compress.
-Rows are flushed in groups every few seconds, so a crash loses at most the last few seconds.
+
+Why several part files instead of one: a Parquet file is only readable once its footer has
+been written when the file is closed. If a single file were kept open for the whole session,
+killing the process would make the entire recording unreadable. Instead, every flush (every
+few seconds) writes one small, complete file, so a crash loses at most the unflushed rows.
 """
 
 from __future__ import annotations
@@ -34,7 +39,8 @@ import pyarrow.parquet as pq
 from airhand.ingest.chunk import SampleChunk
 
 SCHEMA_VERSION = 1
-SAMPLES_FILE = "samples.parquet"
+SAMPLES_DIR = "samples"
+PART_PATTERN = "part-{:05d}.parquet"
 META_FILE = "meta.json"
 PACKET_COLUMNS = ("packet_seq", "recv_wall_ns", "recv_mono_ns", "time_ns")
 
@@ -84,10 +90,11 @@ class SessionRecorder:
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         session_dir.mkdir(parents=True, exist_ok=False)
+        (session_dir / SAMPLES_DIR).mkdir()
         self.session_dir = session_dir
         self.channels = channels
         self._schema = _schema(channels)
-        self._writer = pq.ParquetWriter(session_dir / SAMPLES_FILE, self._schema)
+        self._n_parts = 0
         self._pending: list[SampleChunk] = []
         self._flush_interval_s = flush_interval_s
         self._clock = clock
@@ -122,15 +129,25 @@ class SessionRecorder:
             self.flush()
 
     def flush(self) -> None:
-        """Write buffered chunks as one Parquet row group."""
+        """Write buffered chunks as the next complete part file."""
         if self._pending:
-            self._writer.write_table(_chunks_to_table(self._pending, self._schema))
+            path = self.session_dir / SAMPLES_DIR / PART_PATTERN.format(self._n_parts)
+            pq.write_table(_chunks_to_table(self._pending, self._schema), path)
+            self._n_parts += 1
             self._pending.clear()
         self._last_flush = self._clock()
 
+    @property
+    def n_parts(self) -> int:
+        return self._n_parts
+
+    def update_info(self, info: dict[str, Any]) -> None:
+        """Add metadata that only becomes known during recording (e.g. the app's User-Agent)."""
+        self._meta.update(info)
+        self._write_meta()
+
     def close(self) -> None:
         self.flush()
-        self._writer.close()
         self._meta.update(
             {
                 "status": "complete",
@@ -179,11 +196,13 @@ def read_session(session_dir: Path) -> RecordedSession:
     if meta.get("schema_version") != SCHEMA_VERSION:
         raise ValueError(f"Unsupported session schema version: {meta.get('schema_version')}")
     channels = tuple(meta["channels"])
-    table = pq.read_table(session_dir / SAMPLES_FILE)
+    # Zero-padded part names sort in write order.
+    parts = sorted((session_dir / SAMPLES_DIR).glob("part-*.parquet"))
+    if not parts:
+        return RecordedSession(path=session_dir, meta=meta, chunks=[])
+    table = pa.concat_tables([pq.read_table(p) for p in parts])
 
     seq = table.column("packet_seq").to_numpy()
-    if len(seq) == 0:
-        return RecordedSession(path=session_dir, meta=meta, chunks=[])
     recv_wall = table.column("recv_wall_ns").to_numpy()
     recv_mono = table.column("recv_mono_ns").to_numpy()
     times = table.column("time_ns").to_numpy()

@@ -7,11 +7,16 @@ import json
 from pathlib import Path
 
 import numpy as np
-import pyarrow.parquet as pq
 import pytest
 
 from airhand.ingest.chunk import SampleChunk
-from airhand.ingest.recorder import META_FILE, SAMPLES_FILE, SessionRecorder, read_session
+from airhand.ingest.recorder import (
+    META_FILE,
+    PART_PATTERN,
+    SAMPLES_DIR,
+    SessionRecorder,
+    read_session,
+)
 from airhand.ingest.replayer import replay
 
 CHANNELS = ("a", "b", "c")
@@ -99,7 +104,7 @@ def test_metadata_is_complete(tmp_path: Path) -> None:
     assert meta["last_time_ns"] == int(chunks[-1].time_ns[-1])
 
 
-def test_flushes_row_groups_on_the_interval(tmp_path: Path) -> None:
+def test_flushes_part_files_on_the_interval(tmp_path: Path) -> None:
     clock = FakeClock()
     chunks = make_chunks(6)
     with SessionRecorder(
@@ -107,11 +112,37 @@ def test_flushes_row_groups_on_the_interval(tmp_path: Path) -> None:
     ) as recorder:
         for chunk in chunks:
             recorder.append(chunk)
-            clock.now += 1.0  # one packet per second -> a flush every 2 packets
-    # 6 packets flushed in pairs = 3 row groups; close() has nothing left to flush.
-    n_groups = pq.ParquetFile(tmp_path / "s" / SAMPLES_FILE).metadata.num_row_groups
-    assert n_groups == 3
+            clock.now += 1.0  # one packet per second
+    # Flushes run when packets 2 and 4 arrive (t = 2 s, 4 s) and close() writes packet 5: 3 parts.
+    parts = sorted((tmp_path / "s" / SAMPLES_DIR).glob("*.parquet"))
+    assert [p.name for p in parts] == [PART_PATTERN.format(i) for i in range(3)]
     assert_chunks_equal(read_session(tmp_path / "s").chunks, chunks)
+
+
+def test_flushed_data_survives_a_crash(tmp_path: Path) -> None:
+    """If the process dies without close(), everything flushed so far is still readable."""
+    clock = FakeClock()
+    chunks = make_chunks(6)
+    recorder = SessionRecorder(
+        tmp_path / "s", channels=CHANNELS, units=UNITS, info={}, flush_interval_s=2.0, clock=clock
+    )
+    for chunk in chunks:
+        recorder.append(chunk)
+        clock.now += 1.0
+    # No close(): flushes ran when packets 2 and 4 arrived (t = 2 s, 4 s), so packets 0-4 are
+    # on disk and packet 5 was still in memory when the process "died".
+    session = read_session(tmp_path / "s")
+    assert session.meta["status"] == "recording"
+    assert_chunks_equal(session.chunks, chunks[:5])
+
+
+def test_update_info_adds_metadata(tmp_path: Path) -> None:
+    with SessionRecorder(
+        tmp_path / "s", channels=CHANNELS, units=UNITS, info={"note": "x"}, flush_interval_s=1.0
+    ) as recorder:
+        recorder.update_info({"user_agent": "SensorLogger/14"})
+    meta = read_session(tmp_path / "s").meta
+    assert meta["user_agent"] == "SensorLogger/14" and meta["note"] == "x"
 
 
 def test_empty_session_is_valid(tmp_path: Path) -> None:
