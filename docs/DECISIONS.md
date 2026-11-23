@@ -88,3 +88,56 @@ Each entry records a non-obvious choice, why it was made, and what else was cons
   not hidden in code.
 - **Alternatives:** automatic stillness detection (better later, in Phase 2, where it is
   needed anyway); robust statistics such as the median absolute deviation.
+
+## Phase 1
+
+### D-010: aiohttp for the live HTTP receiver
+- **Choice:** `aiohttp` (added as a dependency, approved in the Phase 1 plan).
+- **Why:** the standard library has no async HTTP server. Packets arrive about once a second,
+  so performance is irrelevant; a well-known, maintained server is easier to trust than
+  hand-written HTTP parsing.
+- **Alternatives:** HTTP parsing on `asyncio.start_server` (no dependency, more code to
+  maintain); the threaded standard-library server from Phase 0 feeding a queue.
+
+### D-011: Linear interpolation onto an exact 100 Hz grid; nlerp for quaternions
+- **Choice:** grid points at exact multiples of 10 ms of the sensor clock; channels are
+  interpolated linearly, the quaternion with normalised linear interpolation (with sign
+  alignment); roll/pitch/yaw are recorded but not resampled.
+- **Why:** the watch runs at 99.9 Hz, so its samples slowly slide relative to a 100 Hz grid;
+  a fixed grid makes windows, filters and models independent of that. Linear interpolation
+  never overshoots, needs only the two neighbouring samples (no lookahead, so no added
+  latency), and its error is tiny at 100 Hz (bounded and tested). Euler angles wrap at
+  +/-180 degrees, where interpolation produces nonsense.
+- **Alternatives:** zero-order hold (repeat the last value; adds steps and up to 10 ms of
+  timing error); keeping the native 99.9 Hz (windows would drift against wall time);
+  higher-order or band-limited interpolation (needs future samples, adds latency).
+
+### D-012: Gaps longer than 50 ms are marked invalid, never filled
+- **Choice:** if neighbouring samples are more than `max_interp_gap_ms` (50 ms = 5 missing
+  samples) apart, grid points between them get `valid = False` and NaN values.
+- **Why:** filled-in data looks real to every later stage (a model could "detect" a gesture
+  in invented data). Short gaps are interpolated because they are harmless at 100 Hz.
+  Phase 0 measured no gaps, so this is a safety net.
+- **Alternatives:** interpolate everything (silent corruption); drop invalid frames (breaks
+  the fixed grid that windows rely on).
+
+### D-013: Record raw samples as Parquet part files, with packet timing
+- **Choice:** each session folder holds `meta.json` and `samples/part-NNNNN.parquet`, one
+  row per raw sample with `packet_seq`, `recv_wall_ns`, `recv_mono_ns`, `time_ns` and all 16
+  wrist motion fields. A new part file is written on every flush (5 s).
+- **Why:** raw data can always be resampled again, deterministically. Packet numbers and
+  receive times let replay reproduce the real packet timing. A Parquet file is unreadable
+  until it is closed, so separate complete parts mean a crash loses at most 5 s, not the
+  whole session (the first version kept one file open; this was caught while planning the
+  live test and fixed, with a crash test).
+- **Alternatives:** one Parquet file (unsafe on crash); CSV (larger, slower, no types);
+  recording resampled frames (loses the original timing).
+
+### D-014: Explicit start/stop for the live process
+- **Choice:** `ingest_live.py` starts the server and pipeline, waits until Ctrl+C/Ctrl+Break,
+  then runs a separate `stop()` that drains the queue and completes the metadata. Ctrl+Break
+  is mapped to the same handler as Ctrl+C on Windows.
+- **Why:** an end-to-end test showed that cleanup placed in a `finally` inside the
+  long-running coroutine did not run when the loop was interrupted by Ctrl+Break. A
+  separate stop step on the same event loop runs in every case.
+- **Alternatives:** loop signal handlers (`add_signal_handler` is not supported on Windows).

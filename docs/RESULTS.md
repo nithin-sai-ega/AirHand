@@ -152,3 +152,25 @@ batching, so this is deferred until live streaming is tested (DECISIONS D-007). 
   few minutes and check whether packets still hold 51-sample chunks. If they do, live control
   needs a different data path (another app, or a native watch app if a Mac becomes
   available).
+
+## Phase 1
+
+Ingest pipeline checks on the three Phase 0 recordings, converted to sessions with
+`scripts/convert_probe_session.py` and replayed with `scripts/replay_session.py`.
+
+| Session | Raw samples (99.9 Hz) | Grid frames (100 Hz) | Invalid frames | Dropped samples | Fast replay | Digest (first 12) |
+|---|---|---|---|---|---|---|
+| S1 (89.3 s) | 8,926 | 8,932 | 0 | 0 | 0.01 s | `fd9f93f4597f` |
+| S2 (87.8 s) | 8,773 | 8,779 | 0 | 0 | 0.01 s | `0fef07e08660` |
+| S3 (201.6 s) | 20,146 | 20,162 | 0 | 0 | 0.04 s | `53cc20f974f0` |
+
+- **Determinism:** replaying each session twice gives the same digest. S1 replayed at 20x
+  real time (4.44 s) gives the same digest as the instant replay: timing does not change
+  the output. Tests also require streaming output to equal offline resampling exactly.
+- **More frames than samples:** the watch runs at 99.9 Hz, so a 100 Hz grid over the same
+  time span has ~0.1 % more points (e.g. 20,162 vs 20,146 over 201.6 s).
+- **Processing cost:** parsing excluded, resampling one ~1 s packet (102-153 samples) and
+  writing it to the ring buffer takes p50 0.11 ms, p95 0.18 ms, p99 0.29 ms on the Intel i7
+  (3,200 packets, ~0.9 us per sample). Negligible next to the ~1 s transport batching.
+- **Live path:** an end-to-end run of `ingest_live.py` on localhost, fed with 5 real Phase 0
+  packets and stopped with Ctrl+Break, recorded all 562 samples and completed the metadata.

@@ -7,7 +7,8 @@ The phone app pushes sensor data to the laptop over Wi-Fi. For that to work:
 2. Windows Firewall must allow inbound traffic on the probe's ports.
 3. The phone app must be pointed at the laptop's IP address and port.
 
-Default ports (from `configs/probe.yaml`): **HTTP 8000/TCP** and **UDP 5005**.
+Default ports (from `configs/probe.yaml`): **HTTP 8000/TCP** and **UDP 5005**. The Phase 1
+live ingest (`scripts/ingest_live.py`, `configs/ingest.yaml`) uses the same HTTP port 8000.
 
 ## 1. Choose a network
 

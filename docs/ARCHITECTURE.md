@@ -15,23 +15,36 @@ Apple Watch (IMU) -> iPhone app -> Wi-Fi (HTTP/MQTT/UDP)
 Every stage can be driven from recorded sessions (record/replay) so the pipeline stays
 deterministic and testable without the watch.
 
-## Current state (Phase 0)
-
-Only the feasibility probe exists:
+## Current state (Phase 1)
 
 ```
-phone app --HTTP POST--> ProbeServers (ThreadingHTTPServer) --+
-phone app --UDP-------->  ProbeServers (UDP socket thread)  --+--> RawPacketLog (JSONL, verbatim)
+Sensor Logger --HTTP POST--> SensorLoggerReceiver (aiohttp)  --+
+                                                                +--> asyncio.Queue[SampleChunk]
+recorded session ----------> replay() (real time or fast)   --+            |
+                                                                           v
+                                                  IngestPipeline.process(chunk)
+                                                    |-> SessionRecorder  (raw samples -> Parquet parts + meta.json)
+                                                    |-> Resampler        (99.9 Hz sensor time -> exact 100 Hz grid, gaps marked)
+                                                    '-> RingBuffer       (last 30 s of frames for downstream stages)
 ```
 
-- `src/airhand/ingest/probe_server.py`: HTTP and UDP receivers that do not interpret payloads.
-- `src/airhand/ingest/raw_log.py`: the packet "envelope" format and its JSONL reader/writer.
-- `scripts/phase0_probe.py`: command-line entry point.
-- `src/airhand/ingest/sensor_logger.py`: parser for Sensor Logger messages (written from
-  real packets).
-- `src/airhand/ingest/probe_session.py`: loads a recorded session into packet and
-  per-sensor sample tables.
-- `src/airhand/ingest/stream_stats.py` + `scripts/phase0_analyze.py`: stream measurements.
+The live receiver and the replayer put the same `SampleChunk` objects on the same queue, so
+everything after the queue cannot tell live data from a recording.
+
+| Module | Role |
+|---|---|
+| `ingest/sensor_logger.py` | Parse Sensor Logger JSON (written from real packets); extract the watch stream as a chunk |
+| `ingest/chunk.py` | `SampleChunk` (raw samples of one packet) and `Frames` (grid samples + validity) |
+| `ingest/http_server.py` | Async receiver: timestamp, parse, queue |
+| `ingest/resampler.py` | Causal, streaming linear/nlerp resampler with gap marking |
+| `ingest/ring_buffer.py` | Fixed-size buffer of recent frames |
+| `ingest/recorder.py` | Session folders: Parquet part files + metadata; reader |
+| `ingest/replayer.py` | Feeds recorded packets into the queue with original or scaled timing |
+| `ingest/pipeline.py` | Connects recorder, resampler and ring buffer; frame digest for determinism |
+| `scripts/ingest_live.py`, `replay_session.py`, `convert_probe_session.py` | Entry points |
+
+Phase 0 tools (`probe_server.py`, `raw_log.py`, `probe_session.py`, `stream_stats.py`,
+`phase0_probe.py`, `phase0_analyze.py`) remain for re-measuring the stream.
 
 Measured transport (Phase 0): the watch hands samples to the phone in 51-sample (~0.51 s)
 chunks; the phone pushes one HTTP packet every ~1.0-1.5 s on the free tier. See
@@ -39,13 +52,12 @@ chunks; the phone pushes one HTTP packet every ~1.0-1.5 s on the free tier. See
 
 ## Latency budget
 
-To be filled in once real measurements exist (Phase 0 measures the network leg; later
-phases add resample, DSP, inference and dispatch).
+Filled in as stages are built and measured.
 
 | Stage | Budget | Measured p50 | Measured p95 |
 |---|---|---|---|
 | Watch -> phone -> laptop (Sensor Logger free tier; sample age, +/-0.2 s clock uncertainty) | TBD | ~1.8 s | ~2.6 s |
-| Resample | TBD | | |
+| Parse to ring buffer (resample + buffer, per ~1 s packet, Intel i7) | TBD | 0.11 ms | 0.18 ms |
 | DSP | TBD | | |
 | Inference | < 5 ms (p95) | | |
 | Dispatch | TBD | | |

@@ -68,3 +68,52 @@ motion combines the accelerometer and gyroscope (sensor fusion) to give: rotatio
 bias removed, gravity direction, user acceleration (total acceleration minus gravity) and
 an orientation quaternion. The watch stream we get is device motion, which is why the
 measured gyro bias at rest was essentially zero.
+
+## Phase 1: ingest, resampling, record/replay
+
+### Why resample at all?
+Filters, sliding windows and neural networks assume samples are evenly spaced: "the last
+50 samples" should always mean "the last 0.5 s". The watch's timestamps are 10.01 ms apart
+(99.9 Hz), so after 100 s the sample count and the time have drifted apart by 0.1 s.
+Resampling puts every value on a fixed grid (every 10 ms exactly) using the sensor's own
+timestamps, so time and sample index always agree.
+
+### Linear interpolation, and how wrong it can be
+To get a value at grid time g between samples at t0 and t1:
+`alpha = (g - t0) / (t1 - t0)`, `value = v0 + alpha * (v1 - v0)`.
+For a smooth signal the error is at most `h^2 / 8 * max|f''|`, where h is the spacing
+between samples. At 100 Hz with a 2 Hz sine (fast wrist motion) that is about 0.2 % of the
+amplitude. The tests check this bound on a jittered sine.
+
+### Causal processing
+The resampler only uses samples that have already arrived; it never waits for future ones
+and never extrapolates past the newest sample. That matters for real time: any method that
+needs future samples adds their duration to the latency.
+
+### Why long gaps are not filled
+Interpolating across 10 missing samples would draw a straight line through 100 ms of motion
+that was never measured. Downstream stages would treat it as real. Marking those frames
+invalid keeps the grid regular while making the missing data explicit.
+
+### Quaternions
+A unit quaternion (w, x, y, z) describes a 3-D rotation, and q and -q describe the same
+rotation. To interpolate: if the two quaternions point "away" from each other
+(dot product < 0), flip one; then interpolate linearly and rescale to length 1 (nlerp).
+Slerp (spherical interpolation) is exact, but for rotations of a degree or two between
+samples 10 ms apart, nlerp gives practically the same result and is simpler.
+
+### Ring buffers
+A fixed-size array with a write index that wraps around. New data overwrites the oldest,
+memory never grows, and nothing is allocated per sample. Reading the last n items means
+reading backwards from the write index, wrapping past the start if needed.
+
+### Determinism and digests
+The pipeline hashes every frame it produces (SHA-256). Same input -> same bytes -> same
+digest. Comparing two 64-character strings is an easy way to prove that replay is
+deterministic, and that packet boundaries or replay speed do not change the output.
+
+### Parquet and crash safety
+Parquet is a columnar file format: each column is stored (and compressed) separately, so
+reading one channel does not read the others. Its index ("footer") is written when the file
+is closed, so an open file is not readable yet. Writing a new small file every few seconds
+means a crash only loses the data since the last flush.
