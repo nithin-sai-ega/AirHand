@@ -23,6 +23,17 @@ def load_yaml(path: Path) -> dict[str, Any]:
     return data
 
 
+def check_keys(config_name: str, expected: set[str], data: dict[str, Any]) -> None:
+    """Fail loudly on missing or unknown (usually misspelled) config keys."""
+    missing = expected - data.keys()
+    unknown = data.keys() - expected
+    if missing or unknown:
+        raise ValueError(
+            f"Bad {config_name} config. Missing keys: {sorted(missing)}; "
+            f"unknown keys: {sorted(unknown)}"
+        )
+
+
 @dataclass(frozen=True)
 class ProbeConfig:
     """Settings for the Phase 0 probe (see configs/probe.yaml for explanations)."""
@@ -38,16 +49,43 @@ class ProbeConfig:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ProbeConfig:
-        expected = {f.name for f in fields(cls)}
-        missing = expected - data.keys()
-        unknown = data.keys() - expected
-        if missing or unknown:
-            raise ValueError(
-                f"Bad probe config. Missing keys: {sorted(missing)}; "
-                f"unknown keys: {sorted(unknown)}"
-            )
+        check_keys("probe", {f.name for f in fields(cls)}, data)
         return cls(**data)
 
     @classmethod
     def from_yaml(cls, path: Path) -> ProbeConfig:
+        return cls.from_dict(load_yaml(path))
+
+
+@dataclass(frozen=True)
+class Phase0AnalysisConfig:
+    """Settings for the Phase 0 stream analysis (see configs/phase0_analysis.yaml)."""
+
+    probe_root: str
+    sensor: str
+    report_sessions: dict[str, str]
+    still_session: str
+    still_window_s: list[float]
+    rotation_fields: list[str]
+    comparison_session: str
+    comparison_phone_sensor: str
+    gap_factor: float
+    envelope_window_s: float
+    envelope_settle_s: float
+    percentiles: list[float]
+    plot_dir: str
+    summary_path: str
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Phase0AnalysisConfig:
+        check_keys("phase 0 analysis", {f.name for f in fields(cls)}, data)
+        config = cls(**data)
+        if config.still_session not in config.report_sessions:
+            raise ValueError("still_session must be one of the report_sessions labels")
+        if len(config.still_window_s) != 2 or config.still_window_s[0] >= config.still_window_s[1]:
+            raise ValueError("still_window_s must be [start_s, end_s] with start < end")
+        return config
+
+    @classmethod
+    def from_yaml(cls, path: Path) -> Phase0AnalysisConfig:
         return cls.from_dict(load_yaml(path))

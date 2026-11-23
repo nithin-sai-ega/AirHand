@@ -1,0 +1,40 @@
+# Phase 0 stream analysis settings.
+
+# Where the probe saved its sessions (gitignored).
+probe_root: "data/raw/probe"
+
+# The Apple Watch stream in Sensor Logger packets.
+sensor: "wrist motion"
+
+# Sessions that make up the Phase 0 report: label -> folder name under probe_root.
+report_sessions:
+  S1: "20261123-152941"   # watch still on desk
+  S2: "20261123-153207"   # wearing the watch, wrist motion
+  S3: "20261123-153509"   # wearing the watch, mixed activity
+
+# Session used for the noise floor / gyro bias (must be a label above).
+still_session: "S1"
+# Part of that session with no disturbance (the watch was bumped around 22-30 s; see
+# docs/img/phase0/still_noise.png). Seconds from the first sample.
+still_window_s: [35.0, 85.0]
+rotation_fields: ["rotationRateX", "rotationRateY", "rotationRateZ"]
+
+# A session containing both phone and watch streams. Comparing their sample ages inside one
+# session cancels the laptop clock offset, isolating the extra delay of the watch link.
+comparison_session: "20261123-151651"
+comparison_phone_sensor: "gyroscope"
+
+# A spacing larger than gap_factor x the median spacing counts as a gap.
+gap_factor: 1.5
+
+# Window for the lower envelope of sample age (clock offset + minimum delay).
+envelope_window_s: 10.0
+# Skip the start of a session for the envelope fit: the app first flushes a backlog of
+# buffered watch data (samples up to ~5 s old), which is not steady-state behaviour.
+envelope_settle_s: 15.0
+
+percentiles: [5, 50, 95, 99]
+
+# Plots are committed with the docs; the JSON summary stays local.
+plot_dir: "docs/img/phase0"
+summary_path: "data/interim/phase0_summary.json"
