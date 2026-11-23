@@ -27,6 +27,10 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
+
+from airhand.ingest.chunk import SampleChunk
+
 # Name of the Apple Watch stream. Confirmed in Phase 0 by moving only the wrist while the
 # phone lay still: only this stream showed rotation.
 WRIST_MOTION = "wrist motion"
@@ -52,6 +56,18 @@ WRIST_MOTION_FIELDS = (
     "pitch",
     "yaw",
 )
+
+# Unit of every wrist motion field, stored in session metadata so recordings are
+# self-describing.
+WRIST_MOTION_UNITS = {
+    **{f"rotationRate{axis}": "rad/s" for axis in "XYZ"},
+    **{f"acceleration{axis}": "g" for axis in "XYZ"},
+    **{f"gravity{axis}": "g" for axis in "XYZ"},
+    **{f"quaternion{axis}": "1" for axis in "WXYZ"},
+    "roll": "rad",
+    "pitch": "rad",
+    "yaw": "rad",
+}
 
 
 @dataclass(frozen=True)
@@ -113,4 +129,40 @@ def parse_message(body: bytes) -> SensorLoggerMessage:
         session_id=str(_require(data, "sessionId", "message")),
         device_id=str(_require(data, "deviceId", "message")),
         samples=tuple(_parse_sample(raw, i) for i, raw in enumerate(payload)),
+    )
+
+
+def to_chunk(
+    message: SensorLoggerMessage,
+    *,
+    sensor: str,
+    channels: tuple[str, ...],
+    packet_seq: int,
+    recv_wall_ns: int,
+    recv_mono_ns: int,
+) -> SampleChunk | None:
+    """Extract one sensor's samples from a message as a SampleChunk.
+
+    Returns None if the message has no samples of that sensor (e.g. a packet holding only
+    phone sensors). Raises ValueError if a sample lacks one of the requested channels, so a
+    renamed field is caught instead of becoming silent zeros.
+    """
+    selected = [s for s in message.samples if s.name == sensor]
+    if not selected:
+        return None
+
+    values = np.empty((len(selected), len(channels)), dtype=np.float64)
+    for row, sample in enumerate(selected):
+        for col, channel in enumerate(channels):
+            if channel not in sample.values:
+                raise ValueError(f"'{sensor}' sample is missing field '{channel}'")
+            values[row, col] = sample.values[channel]
+
+    return SampleChunk(
+        packet_seq=packet_seq,
+        recv_wall_ns=recv_wall_ns,
+        recv_mono_ns=recv_mono_ns,
+        time_ns=np.array([s.time_ns for s in selected], dtype=np.int64),
+        values=values,
+        channels=channels,
     )
