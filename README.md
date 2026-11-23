@@ -53,3 +53,4 @@ pytest
 - [docs/DECISIONS.md](docs/DECISIONS.md): design decisions and alternatives
 - [docs/LEARNING.md](docs/LEARNING.md): plain-English explanations of each technique
 - [docs/RESULTS.md](docs/RESULTS.md): measurements and model results
+- [docs/SETUP_NETWORK.md](docs/SETUP_NETWORK.md): firewall, hotspot and phone-app setup
