@@ -1,0 +1,47 @@
+# Phase 1 ingest pipeline settings.
+
+# HTTP receiver (Sensor Logger push URL: http://<laptop-ip>:<http_port><data_path>).
+bind_host: "0.0.0.0"
+http_port: 8000
+data_path: "/data"
+
+# Which stream to take from each packet, and what produced it (stored in session metadata).
+sensor: "wrist motion"
+source_app: "Sensor Logger"
+
+# Every field of the stream is recorded raw.
+record_channels: [
+  rotationRateX, rotationRateY, rotationRateZ,
+  accelerationX, accelerationY, accelerationZ,
+  gravityX, gravityY, gravityZ,
+  quaternionW, quaternionX, quaternionY, quaternionZ,
+  roll, pitch, yaw,
+]
+
+# Channels put on the fixed grid. roll/pitch/yaw are left out: they wrap around at
+# +/-180 degrees, which breaks interpolation, and the quaternion holds the same rotation.
+resample_channels: [
+  rotationRateX, rotationRateY, rotationRateZ,
+  accelerationX, accelerationY, accelerationZ,
+  gravityX, gravityY, gravityZ,
+  quaternionW, quaternionX, quaternionY, quaternionZ,
+]
+quaternion_channels: [quaternionW, quaternionX, quaternionY, quaternionZ]
+
+# Output grid rate, and the longest spacing between samples that is still interpolated
+# (50 ms = 5 missing samples at 100 Hz). Longer gaps are marked invalid.
+grid_hz: 100.0
+max_interp_gap_ms: 50.0
+
+# Seconds of resampled frames kept in memory for downstream stages.
+ring_capacity_s: 30.0
+
+# Packets waiting between the receiver and the pipeline before the receiver waits.
+queue_max_chunks: 100
+
+# Recordings (gitignored) and how often buffered rows are written to disk.
+output_root: "data/raw/sessions"
+flush_interval_s: 5.0
+
+# Seconds between console status lines.
+stats_interval_s: 5.0
