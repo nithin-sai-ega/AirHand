@@ -1,0 +1,23 @@
+# Local-only project notes and tool settings
+CLAUDE.md
+.claude/
+
+# Data, recordings, experiment tracking, model artifacts.
+# Anchored to the repo root so the src/airhand/data package is not ignored.
+/data/
+mlruns/
+*.parquet
+*.onnx
+*.pt
+
+# Secrets
+.env
+
+# Python environment and caches
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
