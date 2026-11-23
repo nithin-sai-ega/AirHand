@@ -1,0 +1,25 @@
+# Phase 0 feasibility probe settings.
+
+# 0.0.0.0 listens on every network interface, so the phone can reach the laptop over Wi-Fi.
+bind_host: "0.0.0.0"
+
+# HTTP push (Sensor Logger). Remember to allow this TCP port in Windows Firewall.
+http_port: 8000
+
+# UDP stream (SensorLog backup). Remember to allow this UDP port in Windows Firewall.
+udp_port: 5005
+
+# Each probe run creates a timestamped folder here (gitignored).
+output_root: "data/raw/probe"
+
+# How many characters of each payload to print to the console.
+preview_chars: 160
+
+# Print every packet (true) or only the periodic rate summary (false).
+print_each_packet: true
+
+# Seconds between rate summary lines in the console.
+stats_interval_s: 5.0
+
+# Largest UDP datagram we accept (the maximum UDP payload is 65507 bytes over IPv4).
+udp_max_datagram_bytes: 65535
