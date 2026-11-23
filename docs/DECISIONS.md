@@ -62,3 +62,29 @@ Each entry records a non-obvious choice, why it was made, and what else was cons
 - **Alternatives:** SensorLog over UDP (free; unclear whether the watch can still stream
   live, and watch logging is described as up to about 50 Hz); other paid apps; a native
   watchOS app (needs a Mac, which is out of scope).
+- **Update after the full Phase 0 measurements:** the watch delivers data to the phone in
+  fixed 51-sample (~0.51 s) chunks, adding ~0.5 s before the phone's push timer even
+  starts. The paid tier may therefore not reach the latency needed for a cursor. The first
+  thing to do on the paid tier is re-run the probe and check the chunk size (RESULTS.md,
+  Phase 0 recommendation).
+
+### D-008: Parse only the watch's "wrist motion" stream; keep Apple's processed values
+- **Choice:** the parser is generic (any sensor name, any value fields), but the pipeline
+  uses `wrist motion`: rotation rate (rad/s), user acceleration and gravity (g), quaternion
+  and roll/pitch/yaw.
+- **Why:** it is the only watch stream Sensor Logger provides. It is Apple's fused
+  device-motion output, so gyro bias is already removed (measured bias ~0.003 deg/s) and an
+  orientation estimate is included, which later phases can compare against Madgwick.
+- **Consequence:** we never see raw accelerometer/gyroscope readings from the watch; the
+  "raw" input to our DSP is already processed by Apple.
+- **Alternatives:** none available from this app.
+
+### D-009: Analysis settings that depend on the recordings live in config
+- **Choice:** which sessions form the report, the undisturbed window used for the noise
+  estimate (S1, 35-85 s) and the start-up span skipped in the delay fit (15 s) are in
+  `configs/phase0_analysis.yaml`.
+- **Why:** they are judgments about specific recordings (the watch was bumped at 22-30 s;
+  each recording starts by flushing a backlog), so they should be visible and editable,
+  not hidden in code.
+- **Alternatives:** automatic stillness detection (better later, in Phase 2, where it is
+  needed anyway); robust statistics such as the median absolute deviation.

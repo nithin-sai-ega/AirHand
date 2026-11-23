@@ -2,80 +2,153 @@
 
 ## Phase 0
 
-**Status: method defined, waiting for real recordings.** No numbers below are assumed; every
-table is filled in from recorded sessions.
+**Status: measured on the real device (23 Nov 2026).** Apple Watch -> iPhone (Sensor Logger
+1.69, free tier, HTTP push) -> home Wi-Fi -> Windows laptop. All numbers below come from
+recorded sessions and `scripts/phase0_analyze.py` (settings in `configs/phase0_analysis.yaml`).
 
-### Recording protocol
+### Summary
 
-Set up the network and app first ([SETUP_NETWORK.md](SETUP_NETWORK.md)). For each session,
-start the probe with a descriptive note, then start streaming on the phone:
+- **Watch data arrives live, complete and at ~100 Hz.** 37,845 watch samples over 6.3 min:
+  99.9 Hz, no gaps, no lost messages, no out-of-order samples.
+- **But it arrives in ~1 s batches, and each sample is already 0.7-2.7 s old on arrival.**
+  The phone pushes every 1.0-1.5 s (free tier), and the watch hands data to the phone in
+  fixed **51-sample (~0.51 s) chunks**, which add delay before the phone's push timer.
+- **Recommendation: GO for data collection, training and offline/replay work. Live,
+  low-latency control is NOT achievable with this setup as measured**, and may not be fixed
+  by the paid 100 ms push because of the watch-side chunking (see the go/no-go below).
 
-```powershell
-python scripts/phase0_probe.py --note "S1 still on desk, watch rate <X> Hz, push period <Y>"
-```
+### What was recorded
 
-| # | Session | Duration | Purpose |
+| Label | Session folder | Note | Purpose |
 |---|---|---|---|
-| S1 | Watch lying still on the desk | 2 min | Sample rate, noise floor, gyro bias |
-| S2 | Wearing the watch, normal wrist motion | 2 min | Rate and jitter under motion |
-| S3 | Wearing the watch, mixed activity | 10 min | Gaps over time, clock offset and drift |
-| S4 | Repeat S1 at a second sample-rate setting (if the app offers one) | 2 min | Rate vs setting |
-| S5 | (optional) SensorLog over UDP, as S2 | 2 min | Backup transport |
+| verify | `20261123-151651` | phone still, only the wrist moving; phone + watch sensors on | Identify the watch stream; phone vs watch delay |
+| S1 | `20261123-152941` | watch still on the desk | Rate, noise floor, gyro bias |
+| S2 | `20261123-153207` | wearing the watch, moving around | Rate and timing under motion |
+| S3 | `20261123-153509` | wearing the watch, mixed activity | Longest session; delay over time |
 
-Afterwards, paste a few lines from one `packets.jsonl` file (or the whole file of a short
-session) so the parser can be written from real data.
+Notes: S2 ended up with general movement similar to S3 (fine for these timing measurements).
+S3 was planned as 10 min but contains 3.4 min of data. Two earlier S1 attempts (21 s and a
+2-packet fragment) are kept on disk but not used.
 
-### Metrics (computed by `scripts/phase0_analyze.py`, written after inspecting real packets)
+**The watch stream.** Sensor Logger sends the watch data as `"wrist motion"`. With the phone
+lying still and only the wrist moving, the phone gyroscope stayed at ~0.001 rad/s while
+`wrist motion` rotation reached 12 rad/s (~690 deg/s), so this stream is the watch. It is
+Apple's processed device-motion output (rotation rate, gravity, user acceleration,
+quaternion, roll/pitch/yaw). Separate raw accelerometer/gyroscope streams were not
+offered for the watch.
 
-See [LEARNING.md](LEARNING.md#phase-0-understanding-the-stream) for explanations.
+### Measured numbers (watch stream)
 
-| Metric | Definition |
-|---|---|
-| Effective sample rate (per sensor) | From the sensor's own timestamps: median period and N / span |
-| Sample-timestamp jitter | Histogram of differences between consecutive sample timestamps |
-| Packet inter-arrival jitter | Histogram of differences between consecutive `recv_mono_ns` |
-| Burstiness | Histogram of samples per packet |
-| Gaps / loss | Periods > 1.5 x nominal: count, total duration, estimated missing samples |
-| Clock offset and drift | `recv_wall - last_sample_time` per packet; lower envelope; linear fit for drift |
+| | S1 | S2 | S3 |
+|---|---|---|---|
+| Duration (s) | 89.3 | 87.8 | 201.6 |
+| Watch samples | 8,926 | 8,773 | 20,146 |
+| Rate from median spacing (Hz) | 99.92 | 99.92 | 99.91 |
+| Rate from count / duration (Hz) | 99.92 | 99.92 | 99.91 |
+| Spacing std (ms) | 0.000 | 0.001 | 0.000 |
+| Out-of-order or duplicate samples | 0 | 0 | 0 |
+| Gaps (> 1.5 x period) | 0 | 0 | 0 |
+| Lost messages (messageId gaps) | 0 | 0 | 0 |
+| Packets | 70 | 70 | 160 |
+| Packet interval p50 / p95 / max (ms) | 1243 / 1571 / 2340 | 1113 / 1538 / 1550 | 1171 / 1546 / 1595 |
+| Samples per packet p50 / p95 / max | 102 / 153 / 255 | 102 / 153 / 153 | 102 / 153 / 459 |
+| Packet size, median (KiB) | 61.1 | 59.3 | 59.6 |
+| Sample age p50 / p95 (ms) | 1715 / 2673 | 1799 / 2561 | 1814 / 2628 |
+| Freshest-sample age min / p50 / max (ms) | 742 / 1149 / 2225 | 754 / 1193 / 1297 | 737 / 1191 / 4321 |
 
-### Measured numbers
+"Sample age" is laptop receive time minus the sample's timestamp. It compares two clocks, so
+it includes their offset; the laptop clock was measured at ~0.19 s from internet time
+(`w32tm /stripchart`), so treat absolute ages as +/-0.2 s.
 
-*To be filled in.*
+**Effective sample rate.** 99.9 Hz (10.01 ms spacing) in every session, and the two rate
+estimates agree to 0.01 Hz, so nothing is missing.
+
+![Watch sample spacing](img/phase0/sample_intervals.png)
+
+**Jitter.** The spacing between watch timestamps is *exactly* 10.01 ms (std of 1 us or less).
+Real sensor timestamps normally wobble by microseconds, so these timestamps are very
+likely reconstructed as start + n x period somewhere in the watch/app pipeline. We
+therefore **cannot measure the true sampling jitter**, but for our pipeline the stream is
+already on a uniform 100 Hz grid. Packet arrivals do jitter (below).
+
+**Burstiness.** Packets arrive every ~1.05 s or ~1.5 s (two clusters), carrying 102 or 153
+samples. **Every packet except the first of a session holds a multiple of 51 samples**
+(51, 102, 153, 204, 255, 459): the watch delivers data to the phone in 51-sample (~0.51 s)
+chunks and each phone push carries the 2 or 3 chunks that arrived since the last push.
+
+![Packet inter-arrival times](img/phase0/packet_intervals.png)
+![Samples per packet](img/phase0/samples_per_packet.png)
+
+**Gaps and loss.** None: 0 timestamp gaps, 0 missing message ids, 0 out-of-order samples in
+all three sessions. At the start of each recording the app first flushes a backlog of
+buffered watch data (samples up to ~5 s old) before settling.
+
+**Delay over time (S3).** After the start-up backlog, the freshest sample in each packet is
+~1.15-1.25 s old, with occasional stretches at ~0.75 s; the oldest is ~2.2 or ~2.7 s
+(2-chunk vs 3-chunk packets). The lower-envelope line fit gives an intercept of ~1.0 s and a
+slope of +953 ppm, but that slope comes from the switch between the ~0.75 s and ~1.2 s
+levels, not from clock drift (phone and laptop clocks drift by tens of ppm at most).
+**Clock drift is not measurable from 3.4 min of data with this delay behaviour.**
+
+![Sample age over time](img/phase0/sample_age.png)
+
+**Phone vs watch delay.** In the verify session (same clocks for both), the freshest phone
+gyroscope sample was 327 ms old (median) on arrival and the freshest watch sample 824 ms:
+the watch link adds **~0.5 s** on top of the phone's own batching, matching the 0.51 s chunk
+size. (This assumes the app maps watch timestamps onto the phone clock correctly; a tap test
+that hits phone and watch together would confirm it.)
+
+![Phone vs watch age](img/phase0/phone_vs_watch_age.png)
+
+**Noise floor and gyro bias (S1, 35-85 s, watch untouched).** The watch was bumped around
+22-30 s, so that span is excluded.
+
+| Axis | Mean / bias (deg/s) | Std / noise (deg/s) |
+|---|---|---|
+| rotationRateX | +0.001 | 0.103 |
+| rotationRateY | -0.003 | 0.105 |
+| rotationRateZ | +0.000 | 0.105 |
+
+The bias is essentially zero: Apple's device-motion processing already removes gyro bias.
+Phase 2 still needs a stillness check, but bias estimation may turn out unnecessary.
+
+![Still noise](img/phase0/still_noise.png)
 
 ### End-to-end latency with 240 fps video
 
-This measures the full path from physical motion to something changing on screen.
+Not measured yet. With the free tier's ~1 s batching the video would mostly measure the
+batching, so this is deferred until live streaming is tested (DECISIONS D-007). The method:
 
-1. Show something on screen that reacts immediately to a sharp acceleration spike. Phase 0
-   can provide a small "flash" indicator once the parser exists; from Phase 2 the live
-   dashboard is used instead.
-2. Put the phone in **slow-motion video mode at 240 fps** (Camera -> Slo-mo; check 240 fps is
-   selected in Settings -> Camera -> Record Slo-mo). Use a second phone if the streaming
-   phone is busy, or use the streaming phone only if recording video doesn't disturb
-   streaming.
-3. Frame the shot so both the watch and the laptop screen are visible.
-4. Tap the watch sharply on the desk ~20 times, a few seconds apart.
-5. In the video, for each tap, count frames from the frame where the watch hits the desk to
-   the first frame where the screen changes. Latency = frames / 240 s (one frame is about
-   4.17 ms).
-6. Report median and spread over all taps. Note the display refresh rate: a 60 Hz screen
-   adds up to ~16.7 ms of quantisation on its own.
+1. Show something on screen that reacts immediately to a sharp acceleration spike (from
+   Phase 2 the live dashboard; before that, a small "flash" window can be added).
+2. Film at **240 fps slow-motion** (Camera -> Slo-mo; check Settings -> Camera -> Record
+   Slo-mo is 240 fps) with the watch and the laptop screen both in the shot.
+3. Tap the watch sharply on the desk ~20 times, a few seconds apart.
+4. For each tap, count frames from impact to the first frame where the screen changes;
+   latency = frames / 240 s (one frame is about 4.17 ms).
+5. Report median and spread. A 60 Hz display adds up to ~16.7 ms on its own.
 
-### Go / no-go criteria (proposed, to be confirmed)
+### Go / no-go
 
-| Criterion | Proposed threshold | Why |
-|---|---|---|
-| Watch IMU data arrives live | Yes | Without it the project needs a different data path |
-| Gyroscope effective rate | >= 50 Hz | Pointer smoothness and gesture detail |
-| Packet loss / gaps | < 1 % of time in gaps | Gaps cause cursor stalls and missed gestures |
-| Median packet interval (batching) | <= 100 ms | Batching adds directly to perceived latency |
-| End-to-end latency (video) | p50 <= 150 ms | Above this, pointing feels laggy |
-
-The free Sensor Logger tier pushes once per second, so the two latency criteria can only be
-met on the paid tier (100 ms push). Per [DECISIONS D-007](DECISIONS.md), Phase 0 measures the
-free tier now, and the latency criteria are re-measured when the subscription is taken for
-live testing.
+| Criterion | Threshold | Measured | Result |
+|---|---|---|---|
+| Watch IMU data arrives live | Yes | Yes, `wrist motion` at 99.9 Hz | **Pass** |
+| Gyroscope effective rate | >= 50 Hz | 99.9 Hz | **Pass** |
+| Packet loss / gaps | < 1 % of time | 0 gaps, 0 lost messages | **Pass** |
+| Median packet interval | <= 100 ms | 1113-1243 ms (free tier) | **Fail** |
+| End-to-end latency | p50 <= 150 ms | Not measured; sample age p50 ~1.8 s | **Fail (expected)** |
 
 ### Recommendation
 
-*Pending measurements.*
+- **GO** for Phase 1 (ingest, resampling, record/replay), Phase 3 (data collection) and
+  Phase 4 (models): the recorded data is complete, regular and 100 Hz, and batching does
+  not affect it.
+- **GO** for the offline parts of Phase 5 (ONNX export, streaming inference on replayed
+  data, INT8 quantization, OpenVINO and Snapdragon profiling).
+- **NOT YET** for live pointer control. The paid 100 ms push removes the phone-side
+  batching, but the watch-side 0.51 s chunking would likely remain, leaving roughly
+  0.5-1 s of delay: too slow for a cursor, borderline for discrete gestures. When the
+  subscription is taken (one month is enough), the first step is to re-run the probe for a
+  few minutes and check whether packets still hold 51-sample chunks. If they do, live control
+  needs a different data path (another app, or a native watch app if a Mac becomes
+  available).

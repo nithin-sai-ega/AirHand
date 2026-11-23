@@ -27,6 +27,15 @@ phone app --UDP-------->  ProbeServers (UDP socket thread)  --+--> RawPacketLog 
 - `src/airhand/ingest/probe_server.py`: HTTP and UDP receivers that do not interpret payloads.
 - `src/airhand/ingest/raw_log.py`: the packet "envelope" format and its JSONL reader/writer.
 - `scripts/phase0_probe.py`: command-line entry point.
+- `src/airhand/ingest/sensor_logger.py`: parser for Sensor Logger messages (written from
+  real packets).
+- `src/airhand/ingest/probe_session.py`: loads a recorded session into packet and
+  per-sensor sample tables.
+- `src/airhand/ingest/stream_stats.py` + `scripts/phase0_analyze.py`: stream measurements.
+
+Measured transport (Phase 0): the watch hands samples to the phone in 51-sample (~0.51 s)
+chunks; the phone pushes one HTTP packet every ~1.0-1.5 s on the free tier. See
+[RESULTS.md](RESULTS.md#phase-0).
 
 ## Latency budget
 
@@ -35,7 +44,7 @@ phases add resample, DSP, inference and dispatch).
 
 | Stage | Budget | Measured p50 | Measured p95 |
 |---|---|---|---|
-| Watch -> phone -> laptop (network) | TBD | TBD | TBD |
+| Watch -> phone -> laptop (Sensor Logger free tier; sample age, +/-0.2 s clock uncertainty) | TBD | ~1.8 s | ~2.6 s |
 | Resample | TBD | | |
 | DSP | TBD | | |
 | Inference | < 5 ms (p95) | | |

@@ -5,8 +5,9 @@ streaming neural network recognises discrete gestures (flick, twist, double tap,
 shake) to trigger actions. Everything runs on the laptop CPU, and model size, INT8
 quantization and latency are measured as part of the project.
 
-> Status: **Phase 0, the feasibility probe.** Right now the repository can only receive and
-> log the raw sensor stream so its real characteristics can be measured.
+> Status: **Phase 0, the feasibility probe.** The repository can receive, log and analyse the
+> real watch stream. Measured: 99.9 Hz with no gaps or loss, delivered in ~1 s batches
+> (see [docs/RESULTS.md](docs/RESULTS.md#phase-0)).
 
 ## Pipeline (planned)
 
@@ -39,6 +40,11 @@ python -m pip install -e ".[dev]"
 
 3. Start streaming on the phone. Every packet is saved verbatim to
    `data/raw/probe/<timestamp>/packets.jsonl`. Press `Ctrl+C` to stop.
+4. List the sessions to analyse in `configs/phase0_analysis.yaml`, then:
+
+   ```powershell
+   python scripts/phase0_analyze.py
+   ```
 
 ## Development
 
