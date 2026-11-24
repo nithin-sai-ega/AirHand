@@ -93,7 +93,7 @@ def main() -> int:
         ingest_config.resample_channels,
         frame_period_ns=round(1e9 / sample_hz),
         delay_s=pointer_config.playout_delay_s,
-        max_excess_s=pointer_config.playout_max_excess_s,
+        offset_window_s=pointer_config.playout_offset_window_s,
     )
     telemetry = TelemetryBuffer(capacity=round(pointer_config.telemetry_window_s * sample_hz))
     hotkey = HotkeyPoller(pointer_config.clutch_hotkey) if sys.platform == "win32" else None

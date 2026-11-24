@@ -151,7 +151,7 @@ def run_live(
         ingest.resample_channels,
         round(1e9 / fs),
         pointer_config.playout_delay_s,
-        pointer_config.playout_max_excess_s,
+        pointer_config.playout_offset_window_s,
     )
     telemetry = TelemetryBuffer(round(pointer_config.telemetry_window_s * fs))
     hotkey = HotkeyPoller(pointer_config.clutch_hotkey) if sys.platform == "win32" else None

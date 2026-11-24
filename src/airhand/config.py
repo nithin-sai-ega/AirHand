@@ -188,7 +188,7 @@ class PointerConfig:
     knock_quiet_after_s: float
     knock_cooldown_s: float
     playout_delay_s: float
-    playout_max_excess_s: float
+    playout_offset_window_s: float
     tick_hz: float
     telemetry_window_s: float
     dashboard_refresh_hz: float

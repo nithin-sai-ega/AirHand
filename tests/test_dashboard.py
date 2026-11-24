@@ -21,7 +21,7 @@ MS = 1_000_000
 def test_dashboard_draws_engine_telemetry() -> None:
     engine, _ = make_engine()
     frames = turning_frames(300)
-    for now_ms in range(0, 4000, 10):
+    for now_ms in range(0, 5000, 10):
         if now_ms % 1000 == 0 and now_ms < 3000:  # one 1 s packet per second
             k = now_ms // 1000
             engine.playout.push(frames.slice(100 * k, 100 * (k + 1)), now_ms * MS)

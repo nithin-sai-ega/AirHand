@@ -157,7 +157,6 @@ class Dashboard(QtWidgets.QMainWindow):
             f"buffered &nbsp;&nbsp; {float(s.get('buffered_s', 0.0)):.2f} s",
             f"waiting &nbsp;&nbsp;&nbsp; {'yes' if s.get('starved') else 'no'}",
             f"underruns &nbsp; {s.get('underruns', 0)}",
-            f"skips &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; {s.get('skips', 0)}",
             "<br><b>Latency (ms)</b> &nbsp; p50 &nbsp;&nbsp; p95",
         ]
         latency = s.get("latency", {})

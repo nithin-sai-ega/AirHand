@@ -44,10 +44,12 @@ knock_quiet_after_s: 0.3
 knock_cooldown_s: 1.0
 
 # Playout buffer: frames arrive in bursts (about one packet per second on the Sensor Logger
-# free tier), so they are held back and released at a steady rate. delay_s must cover the
-# packet jitter; if the buffer grows beyond delay_s + max_excess_s it skips ahead.
-playout_delay_s: 0.8
-playout_max_excess_s: 1.0
+# free tier), so each frame is played at (its time + fastest recent network offset + delay).
+# delay_s must exceed the longest packet (1.53 s) plus arrival jitter: 2.5 s covered the p95
+# lateness of every Phase 0 session. The fastest offset is taken over the last
+# offset_window_s, so slow clock drift between watch and laptop is followed.
+playout_delay_s: 2.5
+playout_offset_window_s: 30.0
 
 # Live loop rate for reading the playout buffer and moving the cursor.
 tick_hz: 100.0

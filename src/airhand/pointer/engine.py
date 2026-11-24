@@ -75,7 +75,6 @@ class PointerEngine:
                 buffered_s=self.playout.buffered_s,
                 starved=self.playout.starved,
                 underruns=self.playout.n_underruns,
-                skips=self.playout.n_skips,
                 frames=self.n_frames,
                 latency=self.timer.summary(),
             )

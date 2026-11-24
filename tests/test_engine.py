@@ -50,7 +50,10 @@ def make_engine(hotkey: list[bool] | None = None) -> tuple[PointerEngine, Record
     presses = iter(hotkey) if hotkey is not None else None
     engine = PointerEngine(
         playout=PlayoutBuffer(
-            INGEST.resample_channels, 10 * MS, POINTER.playout_delay_s, POINTER.playout_max_excess_s
+            INGEST.resample_channels,
+            10 * MS,
+            POINTER.playout_delay_s,
+            POINTER.playout_offset_window_s,
         ),
         dsp=DspProcessor(DSP, FS),
         pointer=PointerProcessor(POINTER, FS),
