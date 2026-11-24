@@ -179,6 +179,7 @@ class PointerConfig:
     one_euro_d_cutoff_hz: float
     clutch_hotkey: str
     start_engaged: bool
+    knock_enabled: bool
     knock_highpass_hz: float
     knock_threshold_g: float
     knock_min_spacing_s: float

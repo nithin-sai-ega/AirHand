@@ -59,6 +59,13 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def clutch_hint(config: PointerConfig) -> str:
+    key = config.clutch_hotkey
+    if config.knock_enabled:
+        return f"Press {key} (once, no need to hold) or knock twice to toggle"
+    return f"Press {key} once to turn on, once more to turn off"
+
+
 def make_mouse(dry_run: bool) -> MouseOutput:
     if dry_run or sys.platform != "win32":
         return RecordingMouse(ScreenRect(0, 0, 1920, 1080), x=960, y=540)
@@ -138,7 +145,7 @@ def main() -> int:
         for url in push_urls(ingest_config):
             print(f"  Sensor Logger push URL: {url}")
         print(
-            f"Pointer is OFF. Double knock or press {pointer_config.clutch_hotkey} to toggle."
+            f"Pointer is OFF. {clutch_hint(pointer_config)}."
             + (" (dry run: the real cursor will not move)" if args.dry_run else "")
         )
         try:
@@ -168,6 +175,7 @@ def run_with_dashboard(telemetry: TelemetryBuffer, config: PointerConfig) -> Non
         refresh_hz=config.dashboard_refresh_hz,
         window_s=config.telemetry_window_s,
         knock_threshold_g=config.knock_threshold_g,
+        clutch_hint=clutch_hint(config),
         playout_delay_s=config.playout_delay_s,
     )
     run_dashboard(window)

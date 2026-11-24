@@ -31,7 +31,9 @@ def test_dashboard_draws_engine_telemetry() -> None:
 
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     window = Dashboard(
-        telemetry, refresh_hz=30, window_s=10, knock_threshold_g=0.6, playout_delay_s=0.8
+        telemetry, refresh_hz=30, window_s=10, knock_threshold_g=0.6,
+        clutch_hint="Press F8",
+        playout_delay_s=0.8,
     )
     window.refresh()
     n_frames = len(telemetry.snapshot().time_s)

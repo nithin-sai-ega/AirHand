@@ -13,6 +13,7 @@ rounding each small step) means sub-pixel motion is never lost: ten moves of 0.3
 to 3 px.
 
 user accel --> high-pass --> |.| --> DoubleKnockDetector --> toggles the clutch
+               (only if `knock_enabled`; the signal is always computed for the dashboard)
 
 While the clutch is disengaged the cursor gets no moves and the integrator and One Euro
 filter are reset, so re-engaging never makes the cursor jump.
@@ -126,7 +127,8 @@ class PointerProcessor:
                 self.knocks.reset()
                 self._release()
                 continue
-            if self.knocks.update(int(dsp.time_ns[i]), float(knock_signal[i])):
+            knock = self.knocks.update(int(dsp.time_ns[i]), float(knock_signal[i]))
+            if knock and self.config.knock_enabled:
                 self.clutch.toggle()
                 toggled[i] = True
             engaged[i] = self.clutch.engaged

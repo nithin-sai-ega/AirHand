@@ -9,6 +9,7 @@ import pytest
 
 from airhand.dispatch.windows_input import (
     _INPUT,
+    HotkeyPoller,
     RecordingMouse,
     ScreenRect,
     WindowsMouse,
@@ -52,3 +53,12 @@ def test_windows_mouse_reads_a_sensible_screen() -> None:
     assert mouse.screen.width > 0 and mouse.screen.height > 0
     x, y = mouse.position()
     assert mouse.screen.clamp(x, y) == (x, y)
+
+
+def test_hotkey_reports_one_press_per_key_down_even_when_held() -> None:
+    states = iter([False, True, True, True, False, False, True, False])
+    poller = HotkeyPoller.__new__(HotkeyPoller)  # skip the Win32 setup
+    poller._is_down = lambda: next(states)  # type: ignore[method-assign]
+    poller._was_down = False
+    presses = [poller.pressed() for _ in range(8)]
+    assert presses == [False, True, False, False, False, False, True, False]

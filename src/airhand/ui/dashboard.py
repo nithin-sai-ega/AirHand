@@ -7,7 +7,7 @@ pointer loop, which runs in its own thread.
 Plots (shared time axis, newest frame at 0 s):
     1. raw gyro                       (what the watch sent)
     2. gyro after bias removal + low-pass
-    3. knock signal with the threshold, and double-knock toggles
+    3. acceleration spikes (knock signal) with the knock threshold, and knock toggles
     4. cursor position: integrated (raw) vs One Euro smoothed
     5. Madgwick vs the watch's own orientation (tilt error, heading difference)
 Side panel: clutch state, playout buffer, and per-stage latency percentiles.
@@ -52,11 +52,13 @@ class Dashboard(QtWidgets.QMainWindow):
         refresh_hz: float,
         window_s: float,
         knock_threshold_g: float,
+        clutch_hint: str,
         playout_delay_s: float,
     ) -> None:
         super().__init__()
         self.telemetry = telemetry
         self.playout_delay_s = playout_delay_s
+        self.clutch_hint = clutch_hint
         self.setWindowTitle("AirHand pointer")
         self.resize(1300, 900)
 
@@ -78,7 +80,7 @@ class Dashboard(QtWidgets.QMainWindow):
         raw = add_plot(0, "Raw gyro", "deg/s")
         self.first_plot = raw
         clean = add_plot(1, "Gyro after bias removal and low-pass", "deg/s")
-        knock = add_plot(2, "Knock signal (high-passed acceleration)", "g")
+        knock = add_plot(2, "Acceleration spikes (high-passed)", "g")
         cursor = add_plot(3, "Cursor position: integrated vs One Euro", "px")
         orient = add_plot(4, "Madgwick vs watch orientation", "deg")
         orient.setLabel("bottom", "time (s)")
@@ -149,7 +151,7 @@ class Dashboard(QtWidgets.QMainWindow):
         clutch = "ENGAGED" if engaged else "off"
         rows = [
             f"<div style='font-size:20px; color:{clutch_color}'><b>Pointer {clutch}</b></div>",
-            "<div style='color:#52514e'>double knock or hotkey to toggle</div><br>",
+            f"<div style='color:#52514e'>{self.clutch_hint}</div><br>",
             f"toggles &nbsp;&nbsp;&nbsp;&nbsp; {s.get('toggles', 0)}",
             f"frames played {s.get('frames', 0)}",
             "<br><b>Playout buffer</b>",

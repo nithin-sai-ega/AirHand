@@ -215,7 +215,7 @@ def test_double_knock_in_the_acceleration_engages_the_clutch() -> None:
     accel = np.zeros((n, 3))
     for t in (1.0, 1.25):  # two sharp spikes, like knuckles on a desk
         accel[round(t * FS), 2] = 2.0
-    out = PointerProcessor(pointer_config(start_engaged=False), FS).process(
+    out = PointerProcessor(pointer_config(start_engaged=False, knock_enabled=True), FS).process(
         dsp_output(np.full(n, 30.0), accel)
     )
     toggle_index = int(np.flatnonzero(out.toggled)[0])
@@ -223,3 +223,25 @@ def test_double_knock_in_the_acceleration_engages_the_clutch() -> None:
     assert not out.engaged[:toggle_index].any()
     assert out.engaged[toggle_index:].all()
     assert out.dx[toggle_index:].sum() < 0  # now turning left moves the cursor left
+
+
+def test_knocks_are_ignored_when_the_knock_clutch_is_disabled() -> None:
+    n = 400
+    accel = np.zeros((n, 3))
+    for t in (1.0, 1.25):
+        accel[round(t * FS), 2] = 2.0
+    out = PointerProcessor(pointer_config(start_engaged=False, knock_enabled=False), FS).process(
+        dsp_output(np.full(n, 30.0), accel)
+    )
+    assert not out.toggled.any()
+    assert not out.engaged.any()
+
+
+def test_hotkey_toggle_works_without_holding() -> None:
+    proc = PointerProcessor(pointer_config(start_engaged=False), FS)
+    proc.toggle_clutch()  # one press: on, and it stays on
+    out = proc.process(dsp_output(np.full(200, 30.0)))
+    assert out.engaged.all()
+    proc.toggle_clutch()  # a second press: off
+    out = proc.process(dsp_output(np.full(200, 30.0)))
+    assert not out.engaged.any()
