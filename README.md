@@ -5,9 +5,10 @@ streaming neural network recognises discrete gestures (flick, twist, double tap,
 shake) to trigger actions. Everything runs on the laptop CPU, and model size, INT8
 quantization and latency are measured as part of the project.
 
-> Status: **Phase 1, ingest.** The watch stream is received, resampled onto a 100 Hz grid,
-> buffered, recorded to Parquet and replayable deterministically. Phase 0 measured the
-> stream at 99.9 Hz with no gaps or loss, delivered in ~1 s batches
+> Status: **Phase 2, pointer (no ML).** Wrist rotation moves the Windows cursor through
+> gyro bias removal, filtering, a gain curve and a One Euro filter; F8 toggles it on and
+> off; a live dashboard shows every stage. The phone app delivers data in ~1 s
+> batches, so the cursor runs smoothly but about 3 s behind the hand
 > (see [docs/RESULTS.md](docs/RESULTS.md)).
 
 ## Pipeline (planned)
@@ -72,6 +73,33 @@ python -m pip install -e ".[dev]"
    ```
 
 Settings live in `configs/ingest.yaml`.
+
+## Move the cursor with the watch
+
+```powershell
+python scripts/pointer_live.py --note "pointer test" --subject S01 --wrist L
+```
+
+The pointer starts **off**. Press F8 once to turn it on and once more to turn it off (no
+need to hold it). Point by sweeping your arm left/right and tilting your hand up/down. Close the dashboard window or press Ctrl+C to stop; every run is recorded. Add
+`--dry-run` to run everything without moving the real cursor.
+
+Try the pointer without the watch, on a recorded session:
+
+```powershell
+python scripts/pointer_replay.py data/raw/sessions/<timestamp> --engaged
+python scripts/pointer_replay.py data/raw/sessions/<timestamp> --live --dry-run
+```
+
+The first prints a summary and saves a cursor-path plot; the second replays the packets
+with their original timing through the live loop and dashboard. Compare our orientation
+filter with the watch's own:
+
+```powershell
+python scripts/compare_orientation.py --session S1=data/raw/sessions/<timestamp>
+```
+
+Settings live in `configs/dsp.yaml` and `configs/pointer.yaml`.
 
 ## Development
 

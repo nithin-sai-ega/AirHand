@@ -1,0 +1,62 @@
+# Phase 2 pointer settings (wrist rotation -> cursor motion).
+
+# Direction of the forearm (elbow -> hand) in the watch's body frame. On the left wrist with
+# the crown towards the hand this is +x. Check it on the dashboard: turning the wrist left
+# must move the cursor left. If it moves the wrong way, flip the sign.
+forearm_axis: [1.0, 0.0, 0.0]
+# If the forearm points almost straight up or down there is no well-defined "left" axis;
+# below this horizontal length the vertical cursor motion is set to zero.
+min_horizontal_norm: 0.3
+
+# Gain curve (control-display gain): slow wrist motion -> low gain for precision,
+# fast motion -> high gain to cross the screen. Speeds in deg/s, gain in pixels per degree.
+dead_zone_dps: 1.5
+gain_low_px_per_deg: 3.0
+gain_high_px_per_deg: 20.0
+gain_mid_dps: 40.0
+gain_width_dps: 15.0
+
+# One Euro filter on the cursor position. min_cutoff: smoothing when moving slowly (lower =
+# smoother, more lag). beta: how fast the cutoff rises with speed (higher = less lag when
+# moving fast). d_cutoff: smoothing of the speed estimate itself.
+one_euro_min_cutoff_hz: 1.0
+one_euro_beta: 0.01
+one_euro_d_cutoff_hz: 1.0
+
+# Clutch: the pointer starts disengaged. Press the hotkey once to turn it on and once more
+# to turn it off (a toggle, nothing to hold down).
+clutch_hotkey: F8
+start_engaged: false
+
+# Double-knock clutch (knuckles on the desk twice). Off: the owner prefers the hotkey until
+# a learned gesture (pinch / clench) can take over. The settings below apply when enabled.
+knock_enabled: false
+# A knock is a short, sharp spike in user acceleration, so the
+# signal is high-pass filtered first (slow arm motion removed) and thresholded.
+knock_highpass_hz: 5.0
+knock_threshold_g: 0.6
+# Above-threshold frames closer than this belong to the same knock.
+knock_min_spacing_s: 0.08
+# The second knock must follow the first within this window.
+knock_pair_min_s: 0.12
+knock_pair_max_s: 0.5
+# No other knock may come just before the pair or just after it (rejects shaking, typing).
+knock_quiet_before_s: 0.4
+knock_quiet_after_s: 0.3
+# After a toggle, knocks are ignored for this long.
+knock_cooldown_s: 1.0
+
+# Playout buffer: frames arrive in bursts (about one packet per second on the Sensor Logger
+# free tier), so each frame is played at (its time + fastest recent network offset + delay).
+# delay_s must exceed the longest packet (1.53 s) plus arrival jitter: 2.5 s covered the p95
+# lateness of every Phase 0 session. The fastest offset is taken over the last
+# offset_window_s, so slow clock drift between watch and laptop is followed.
+playout_delay_s: 2.5
+playout_offset_window_s: 30.0
+
+# Live loop rate for reading the playout buffer and moving the cursor.
+tick_hz: 100.0
+
+# Dashboard: seconds of history shown and screen refresh rate.
+telemetry_window_s: 10.0
+dashboard_refresh_hz: 30.0
