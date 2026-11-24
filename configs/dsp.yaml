@@ -1,0 +1,29 @@
+# Phase 2 signal processing settings. The sample rate comes from configs/ingest.yaml
+# (grid_hz), because DSP always runs on the resampled grid.
+
+# Which resampled channels hold each signal (Sensor Logger "wrist motion" names).
+# rotationRate is rad/s in the watch's body frame; acceleration is the user acceleration
+# (gravity already removed) in g; gravity is a unit-length vector in g pointing down;
+# the quaternion rotates body-frame vectors into the watch's reference frame.
+gyro_channels: [rotationRateX, rotationRateY, rotationRateZ]
+user_accel_channels: [accelerationX, accelerationY, accelerationZ]
+gravity_channels: [gravityX, gravityY, gravityZ]
+quaternion_channels: [quaternionW, quaternionX, quaternionY, quaternionZ]
+
+# Low-pass filter on the gyro before the pointer: removes sensor noise above the
+# frequencies of deliberate hand motion (roughly < 10 Hz). Butterworth, causal.
+lowpass_cutoff_hz: 15.0
+lowpass_order: 2
+
+# Stillness: the wrist counts as still when, over the whole window, rotation speed stays
+# below stillness_gyro_dps and user acceleration stays below stillness_accel_g.
+stillness_window_s: 0.5
+stillness_gyro_dps: 2.0
+stillness_accel_g: 0.02
+
+# Gyro bias is re-estimated only while still, as a running average with this time constant.
+bias_time_constant_s: 2.0
+
+# Madgwick filter gain: how strongly the accelerometer pulls the gyro-integrated
+# orientation back towards "gravity is down". Larger = less drift, more noise.
+madgwick_beta: 0.04

@@ -127,3 +127,84 @@ class IngestConfig:
     @property
     def ring_capacity_frames(self) -> int:
         return round(self.ring_capacity_s * self.grid_hz)
+
+
+@dataclass(frozen=True)
+class DspConfig:
+    """Settings for the Phase 2 signal processing stage (see configs/dsp.yaml)."""
+
+    gyro_channels: tuple[str, ...]
+    user_accel_channels: tuple[str, ...]
+    gravity_channels: tuple[str, ...]
+    quaternion_channels: tuple[str, ...]
+    lowpass_cutoff_hz: float
+    lowpass_order: int
+    stillness_window_s: float
+    stillness_gyro_dps: float
+    stillness_accel_g: float
+    bias_time_constant_s: float
+    madgwick_beta: float
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> DspConfig:
+        check_keys("dsp", {f.name for f in fields(cls)}, data)
+        values = dict(data)
+        for key in ("gyro_channels", "user_accel_channels", "gravity_channels"):
+            values[key] = tuple(values[key])
+            if len(values[key]) != 3:
+                raise ValueError(f"{key} must name exactly 3 channels (x, y, z)")
+        values["quaternion_channels"] = tuple(values["quaternion_channels"])
+        if len(values["quaternion_channels"]) != 4:
+            raise ValueError("quaternion_channels must name exactly 4 channels (w, x, y, z)")
+        return cls(**values)
+
+    @classmethod
+    def from_yaml(cls, path: Path) -> DspConfig:
+        return cls.from_dict(load_yaml(path))
+
+
+@dataclass(frozen=True)
+class PointerConfig:
+    """Settings for the Phase 2 pointer, clutch and live loop (see configs/pointer.yaml)."""
+
+    forearm_axis: tuple[float, float, float]
+    min_horizontal_norm: float
+    dead_zone_dps: float
+    gain_low_px_per_deg: float
+    gain_high_px_per_deg: float
+    gain_mid_dps: float
+    gain_width_dps: float
+    one_euro_min_cutoff_hz: float
+    one_euro_beta: float
+    one_euro_d_cutoff_hz: float
+    clutch_hotkey: str
+    start_engaged: bool
+    knock_highpass_hz: float
+    knock_threshold_g: float
+    knock_min_spacing_s: float
+    knock_pair_min_s: float
+    knock_pair_max_s: float
+    knock_quiet_before_s: float
+    knock_quiet_after_s: float
+    knock_cooldown_s: float
+    playout_delay_s: float
+    playout_max_excess_s: float
+    tick_hz: float
+    telemetry_window_s: float
+    dashboard_refresh_hz: float
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PointerConfig:
+        check_keys("pointer", {f.name for f in fields(cls)}, data)
+        values = dict(data)
+        axis = tuple(float(v) for v in values["forearm_axis"])
+        if len(axis) != 3 or not any(axis):
+            raise ValueError("forearm_axis must be a non-zero [x, y, z] vector")
+        values["forearm_axis"] = axis
+        if values["knock_pair_min_s"] >= values["knock_pair_max_s"]:
+            raise ValueError("knock_pair_min_s must be smaller than knock_pair_max_s")
+        return cls(**values)
+
+    @classmethod
+    def from_yaml(cls, path: Path) -> PointerConfig:
+        return cls.from_dict(load_yaml(path))
