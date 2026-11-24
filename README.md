@@ -5,9 +5,10 @@ streaming neural network recognises discrete gestures (flick, twist, double tap,
 shake) to trigger actions. Everything runs on the laptop CPU, and model size, INT8
 quantization and latency are measured as part of the project.
 
-> Status: **Phase 0, the feasibility probe.** The repository can receive, log and analyse the
-> real watch stream. Measured: 99.9 Hz with no gaps or loss, delivered in ~1 s batches
-> (see [docs/RESULTS.md](docs/RESULTS.md#phase-0)).
+> Status: **Phase 1, ingest.** The watch stream is received, resampled onto a 100 Hz grid,
+> buffered, recorded to Parquet and replayable deterministically. Phase 0 measured the
+> stream at 99.9 Hz with no gaps or loss, delivered in ~1 s batches
+> (see [docs/RESULTS.md](docs/RESULTS.md)).
 
 ## Pipeline (planned)
 
@@ -45,6 +46,32 @@ python -m pip install -e ".[dev]"
    ```powershell
    python scripts/phase0_analyze.py
    ```
+
+## Record and replay sessions
+
+1. Set up the network and phone app ([docs/SETUP_NETWORK.md](docs/SETUP_NETWORK.md)); the
+   push URL is `http://<laptop-ip>:8000/data`.
+2. Record a live session (Ctrl+C to stop):
+
+   ```powershell
+   python scripts/ingest_live.py --note "desk test" --subject S01 --wrist L
+   ```
+
+   Sessions are saved to `data/raw/sessions/<timestamp>/` (Parquet parts + `meta.json`).
+3. Replay a session through the same pipeline (`--speed 1` for real time, default is as
+   fast as possible); the printed digest is identical on every run:
+
+   ```powershell
+   python scripts/replay_session.py data/raw/sessions/<timestamp>
+   ```
+
+4. Phase 0 probe recordings can be converted into sessions:
+
+   ```powershell
+   python scripts/convert_probe_session.py data/raw/probe/<timestamp>
+   ```
+
+Settings live in `configs/ingest.yaml`.
 
 ## Development
 

@@ -10,11 +10,18 @@ import json
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pytest
 
 from airhand.ingest.probe_session import load_probe_session
 from airhand.ingest.raw_log import RawPacketLog
-from airhand.ingest.sensor_logger import WRIST_MOTION, WRIST_MOTION_FIELDS, parse_message
+from airhand.ingest.sensor_logger import (
+    WRIST_MOTION,
+    WRIST_MOTION_FIELDS,
+    WRIST_MOTION_UNITS,
+    parse_message,
+    to_chunk,
+)
 
 T0 = 1_795_463_355_248_168_700  # a real-looking epoch time in nanoseconds
 PERIOD_NS = 10_000_000  # 100 Hz
@@ -128,3 +135,57 @@ def test_load_probe_session_links_samples_to_packets(tmp_path: Path) -> None:
     # Packet 0 was the GET; the two POSTs are packets 1 and 2.
     assert list(wrist["packet_seq"]) == [1, 1, 1, 2, 2]
     assert "rotationRateX" in wrist.columns
+
+
+def test_to_chunk_selects_sensor_and_orders_channels() -> None:
+    message = parse_message(
+        message_body(
+            3,
+            [
+                wrist_sample(T0, rotation_x=0.1),
+                {"name": "gyroscope", "time": T0 + 5, "values": {"x": 9.0, "y": 9.0, "z": 9.0}},
+                wrist_sample(T0 + PERIOD_NS, rotation_x=0.2),
+            ],
+        )
+    )
+    channels = ("quaternionW", "rotationRateX")
+    chunk = to_chunk(
+        message,
+        sensor=WRIST_MOTION,
+        channels=channels,
+        packet_seq=4,
+        recv_wall_ns=T0 + 999,
+        recv_mono_ns=123,
+    )
+
+    assert chunk is not None
+    assert chunk.packet_seq == 4 and chunk.recv_wall_ns == T0 + 999 and chunk.recv_mono_ns == 123
+    assert chunk.channels == channels
+    np.testing.assert_array_equal(chunk.time_ns, [T0, T0 + PERIOD_NS])
+    np.testing.assert_array_equal(chunk.values, [[1.0, 0.1], [1.0, 0.2]])
+    assert chunk.time_ns.dtype == np.int64
+
+
+def test_to_chunk_returns_none_without_the_sensor() -> None:
+    message = parse_message(
+        message_body(1, [{"name": "gyroscope", "time": T0, "values": {"x": 0, "y": 0, "z": 0}}])
+    )
+    kwargs = {"packet_seq": 0, "recv_wall_ns": 0, "recv_mono_ns": 0}
+    assert to_chunk(message, sensor=WRIST_MOTION, channels=("rotationRateX",), **kwargs) is None
+
+
+def test_to_chunk_rejects_missing_channel() -> None:
+    message = parse_message(message_body(1, [wrist_sample(T0)]))
+    with pytest.raises(ValueError, match="missingField"):
+        to_chunk(
+            message,
+            sensor=WRIST_MOTION,
+            channels=("rotationRateX", "missingField"),
+            packet_seq=0,
+            recv_wall_ns=0,
+            recv_mono_ns=0,
+        )
+
+
+def test_every_wrist_motion_field_has_a_unit() -> None:
+    assert set(WRIST_MOTION_UNITS) == set(WRIST_MOTION_FIELDS)

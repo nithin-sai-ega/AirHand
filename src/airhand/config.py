@@ -89,3 +89,41 @@ class Phase0AnalysisConfig:
     @classmethod
     def from_yaml(cls, path: Path) -> Phase0AnalysisConfig:
         return cls.from_dict(load_yaml(path))
+
+
+@dataclass(frozen=True)
+class IngestConfig:
+    """Settings for the Phase 1 ingest pipeline (see configs/ingest.yaml)."""
+
+    bind_host: str
+    http_port: int
+    data_path: str
+    sensor: str
+    source_app: str
+    record_channels: tuple[str, ...]
+    resample_channels: tuple[str, ...]
+    quaternion_channels: tuple[str, ...]
+    grid_hz: float
+    max_interp_gap_ms: float
+    ring_capacity_s: float
+    queue_max_chunks: int
+    output_root: str
+    flush_interval_s: float
+    stats_interval_s: float
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> IngestConfig:
+        check_keys("ingest", {f.name for f in fields(cls)}, data)
+        values = dict(data)
+        # YAML lists become tuples so channel orders compare equal to chunk channels.
+        for key in ("record_channels", "resample_channels", "quaternion_channels"):
+            values[key] = tuple(values[key])
+        return cls(**values)
+
+    @classmethod
+    def from_yaml(cls, path: Path) -> IngestConfig:
+        return cls.from_dict(load_yaml(path))
+
+    @property
+    def ring_capacity_frames(self) -> int:
+        return round(self.ring_capacity_s * self.grid_hz)
