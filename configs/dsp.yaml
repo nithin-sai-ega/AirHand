@@ -18,7 +18,7 @@ lowpass_order: 2
 # Stillness: the wrist counts as still when, over the whole window, rotation speed stays
 # below stillness_gyro_dps and user acceleration stays below stillness_accel_g.
 stillness_window_s: 0.5
-stillness_gyro_dps: 2.0
+stillness_gyro_dps: 1.0
 stillness_accel_g: 0.02
 
 # Gyro bias is re-estimated only while still, as a running average with this time constant.
@@ -26,4 +26,4 @@ bias_time_constant_s: 2.0
 
 # Madgwick filter gain: how strongly the accelerometer pulls the gyro-integrated
 # orientation back towards "gravity is down". Larger = less drift, more noise.
-madgwick_beta: 0.04
+madgwick_beta: 0.01
