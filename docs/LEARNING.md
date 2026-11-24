@@ -197,12 +197,14 @@ ahead would be wrong whenever the hand changes direction. So prediction cannot r
 delay; it can only shave off a little once the delay is already small (Phase 6c).
 
 ### Clutching and the double knock
-A clutch decides when wrist motion moves the cursor, like lifting a mouse off the desk. Here
-it is toggled by knocking the knuckles on the desk twice. A knock is a short, sharp spike in
+A clutch decides when wrist motion moves the cursor, like lifting a mouse off the desk. It is
+currently the F8 key as a toggle (press once for on, once for off). An optional detector
+(off by default) toggles it by knocking the knuckles on the desk twice. A knock is a short, sharp spike in
 acceleration, so the signal is high-pass filtered (slow arm motion removed) and thresholded.
 Timing rules then turn spikes into a decision: two knocks 0.12-0.5 s apart, nothing just
 before or just after, and a cooldown after each toggle. This is classic event detection
-with hand-set rules; the trained gesture model replaces it later.
+with hand-set rules. Apple's own pinch gesture works on the same principle but with a trained
+model, which is what Phases 3-5 aim to reproduce from the motion data.
 
 ### Absolute vs relative cursor moves
 A relative `SendInput` move goes through the Windows pointer-speed and "Enhance pointer

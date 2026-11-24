@@ -231,7 +231,7 @@ arm acceleration be mistaken for gravity.
 - The right panel zooms in on the fastest movement. The One Euro output follows the raw
   integrated position closely during the sweep (little lag at high speed) and smooths small
   wiggles at rest.
-- **Knock detector false triggers:** none in about 6 minutes of everyday motion. That motion's
+- **Knock detector false triggers** (the detector is now off by default, D-018): none in about 6 minutes of everyday motion. That motion's
   knock signal reached p99.9 0.38 g and 0.88 g at most against the 0.6 g threshold, so it is
   the timing rules, not the threshold alone, that prevent false toggles. A recording with
   deliberate knocks is needed to tune the threshold (open item).

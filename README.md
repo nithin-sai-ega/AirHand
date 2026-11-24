@@ -6,8 +6,8 @@ shake) to trigger actions. Everything runs on the laptop CPU, and model size, IN
 quantization and latency are measured as part of the project.
 
 > Status: **Phase 2, pointer (no ML).** Wrist rotation moves the Windows cursor through
-> gyro bias removal, filtering, a gain curve and a One Euro filter; a double knock on the
-> desk toggles it; a live dashboard shows every stage. The phone app delivers data in ~1 s
+> gyro bias removal, filtering, a gain curve and a One Euro filter; F8 toggles it on and
+> off; a live dashboard shows every stage. The phone app delivers data in ~1 s
 > batches, so the cursor runs smoothly but about 3 s behind the hand
 > (see [docs/RESULTS.md](docs/RESULTS.md)).
 
@@ -80,8 +80,8 @@ Settings live in `configs/ingest.yaml`.
 python scripts/pointer_live.py --note "pointer test" --subject S01 --wrist L
 ```
 
-The pointer starts **off**. Knock your knuckles on the desk twice (or press F8) to toggle
-it. Close the dashboard window or press Ctrl+C to stop; every run is recorded. Add
+The pointer starts **off**. Press F8 once to turn it on and once more to turn it off (no
+need to hold it). Point by sweeping your arm left/right and tilting your hand up/down. Close the dashboard window or press Ctrl+C to stop; every run is recorded. Add
 `--dry-run` to run everything without moving the real cursor.
 
 Try the pointer without the watch, on a recorded session:

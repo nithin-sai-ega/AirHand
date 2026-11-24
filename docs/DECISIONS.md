@@ -185,7 +185,7 @@ Each entry records a non-obvious choice, why it was made, and what else was cons
 - **Alternatives:** One Euro on the angular velocity before the gain (its adaptation would
   key off acceleration rather than speed); constant gain (precision vs speed trade-off).
 
-### D-018: Double knock on the desk as the clutch, F8 as backup
+### D-018: Double knock on the desk as the clutch, F8 as backup (knock later disabled)
 - **Choice (owner's decision):** the pointer starts disengaged; a double knock (high-passed
   acceleration above 0.6 g twice, 0.12-0.5 s apart, quiet before and after, 1 s cooldown)
   or the F8 key toggles it.
@@ -199,6 +199,25 @@ Each entry records a non-obvious choice, why it was made, and what else was cons
 - **Open:** the threshold is provisional until a recording with deliberate knocks exists.
   Everyday motion in the Phase 0 sessions reached 0.88 g at most and produced no double
   knocks.
+- **Update (owner's decision, after trying the idea):** the knock felt awkward. It is now
+  off by default (`knock_enabled: false`) and the clutch is the F8 key as a toggle: one press
+  turns the pointer on, the next turns it off, nothing is held. What the owner actually
+  wanted is the watch's own AssistiveTouch pinch / clench gesture; Sensor Logger does not
+  pass that event on, so `pinch` and `clench` become candidate gestures for our own model
+  (Phase 3 data collection decides whether the motion sensors alone can separate them).
+  The knock code and its tests stay, since it costs nothing when disabled.
+
+### D-022: Point with the whole arm via rotation; no hand-position tracking
+- **Choice:** the pointer follows rotation, whether it comes from the wrist, the elbow or the
+  shoulder. Sweeping the arm left/right turns the watch about the vertical axis and moves the
+  cursor; up/down comes from tilting the hand/forearm.
+- **Why:** this is how VR controller "laser pointers" aim too (orientation, not position).
+  Pure sideways sliding of the hand without turning would need position, and position from
+  an accelerometer alone drifts by metres within seconds (LEARNING.md); headsets use cameras
+  for it.
+- **Alternatives:** an absolute "laser pointer" mode (arm direction -> screen position)
+  instead of relative motion; possible later, but its left/right reference drifts in steps
+  (RESULTS.md, Phase 2), so it would need re-centring with the clutch.
 
 ### D-019: Absolute SendInput moves, per-monitor DPI aware
 - **Choice:** read the cursor position, add the move, clamp to the virtual desktop, send an
