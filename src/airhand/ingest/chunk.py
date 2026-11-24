@@ -101,3 +101,12 @@ class Frames:
             valid=np.concatenate([p.valid for p in parts]),
             channels=channels,
         )
+
+    def slice(self, start: int, stop: int) -> Frames:
+        """Frames[start:stop] as a new Frames object."""
+        return Frames(
+            time_ns=self.time_ns[start:stop],
+            values=self.values[start:stop],
+            valid=self.valid[start:stop],
+            channels=self.channels,
+        )

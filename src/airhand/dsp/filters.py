@@ -62,3 +62,41 @@ class ButterworthFilter:
             self._state = zi[:, :, np.newaxis] * x[0][np.newaxis, np.newaxis, :]
         y, self._state = signal.sosfilt(self.sos, x, axis=0, zi=self._state)
         return y
+
+
+class GapAwareFilter:
+    """Wraps a ButterworthFilter for data with invalid frames.
+
+    Each stretch of consecutive valid frames is filtered as one continuous signal; the
+    filter state is reset at the start of every stretch that follows a gap, so it never
+    filters across missing data. Invalid frames come out as NaN. Works across batches.
+    """
+
+    def __init__(self, inner: ButterworthFilter) -> None:
+        self.inner = inner
+        self._previous_frame_valid = False
+
+    def process(self, x: FloatArray, valid: npt.NDArray[np.bool_]) -> FloatArray:
+        y = np.full(x.shape, np.nan)
+        for start, stop in valid_runs(valid):
+            if start > 0 or not self._previous_frame_valid:
+                self.inner.reset()
+            y[start:stop] = self.inner.process(x[start:stop])
+        if len(valid) > 0:
+            self._previous_frame_valid = bool(valid[-1])
+        return y
+
+
+def valid_runs(valid: npt.NDArray[np.bool_]) -> list[tuple[int, int]]:
+    """[start, stop) index ranges of consecutive True values."""
+    runs: list[tuple[int, int]] = []
+    start: int | None = None
+    for i, ok in enumerate(valid):
+        if ok and start is None:
+            start = i
+        elif not ok and start is not None:
+            runs.append((start, i))
+            start = None
+    if start is not None:
+        runs.append((start, len(valid)))
+    return runs

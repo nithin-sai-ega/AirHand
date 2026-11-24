@@ -21,7 +21,7 @@ import numpy as np
 import numpy.typing as npt
 
 from airhand.config import DspConfig
-from airhand.dsp.filters import ButterworthFilter
+from airhand.dsp.filters import ButterworthFilter, GapAwareFilter
 from airhand.dsp.madgwick import Madgwick
 from airhand.dsp.stillness import GyroBiasEstimator, StillnessDetector
 from airhand.ingest.chunk import Frames
@@ -72,11 +72,12 @@ class DspProcessor:
             sample_hz,
             config.bias_time_constant_s,
         )
-        self.lowpass = ButterworthFilter(
-            "lowpass", config.lowpass_cutoff_hz, sample_hz, config.lowpass_order, n_channels=3
+        self.lowpass = GapAwareFilter(
+            ButterworthFilter(
+                "lowpass", config.lowpass_cutoff_hz, sample_hz, config.lowpass_order, n_channels=3
+            )
         )
         self.madgwick: Madgwick | None = None  # created on the first valid frame
-        self._previous_frame_valid = False
 
     def process(self, frames: Frames) -> DspOutput:
         n = len(frames)
@@ -86,7 +87,6 @@ class DspProcessor:
         device_q = _columns(frames, self.config.quaternion_channels)
 
         corrected = np.full((n, 3), np.nan)
-        gyro = np.full((n, 3), np.nan)
         bias = np.full((n, 3), np.nan)
         still = np.zeros(n, dtype=bool)
         madgwick_q = np.full((n, 4), np.nan)
@@ -109,15 +109,7 @@ class DspProcessor:
                 self.madgwick.update(corrected[i], specific_force, dt)
             madgwick_q[i] = self.madgwick.q
 
-        # The low-pass runs over each stretch of consecutive valid frames. Its state is
-        # reset at the start of every stretch that follows a gap, so it never filters
-        # across missing data.
-        for start, stop in _valid_runs(frames.valid):
-            if start > 0 or not self._previous_frame_valid:
-                self.lowpass.reset()
-            gyro[start:stop] = self.lowpass.process(corrected[start:stop])
-        if n > 0:
-            self._previous_frame_valid = bool(frames.valid[-1])
+        gyro = self.lowpass.process(corrected, frames.valid)
 
         return DspOutput(
             time_ns=frames.time_ns.copy(),
@@ -132,17 +124,3 @@ class DspProcessor:
             madgwick_q=madgwick_q,
         )
 
-
-def _valid_runs(valid: BoolArray) -> list[tuple[int, int]]:
-    """[start, stop) index ranges of consecutive True values."""
-    runs: list[tuple[int, int]] = []
-    start: int | None = None
-    for i, ok in enumerate(valid):
-        if ok and start is None:
-            start = i
-        elif not ok and start is not None:
-            runs.append((start, i))
-            start = None
-    if start is not None:
-        runs.append((start, len(valid)))
-    return runs
