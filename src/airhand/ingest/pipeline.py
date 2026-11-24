@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
@@ -25,6 +26,7 @@ from airhand.ingest.chunk import Frames, SampleChunk
 from airhand.ingest.recorder import SessionRecorder
 from airhand.ingest.resampler import Resampler
 from airhand.ingest.ring_buffer import RingBuffer
+from airhand.latency import StageTimer
 
 NS_PER_MS = 1_000_000
 
@@ -46,17 +48,37 @@ class IngestPipeline:
         resampler: Resampler,
         ring: RingBuffer,
         recorder: SessionRecorder | None = None,
+        on_frames: Callable[[Frames], None] | None = None,
+        timer: StageTimer | None = None,
     ) -> None:
+        """
+        Args:
+            on_frames: Optional callback given each batch of new frames (e.g. to feed the
+                pointer's playout buffer).
+            timer: Optional latency recorder: "ingest" processing time per packet and
+                "sample_age" (receive time minus newest sample time) per packet.
+        """
         if ring.channels != resampler.output_channels:
             raise ValueError("Ring buffer channels must match the resampler output channels")
         self.resampler = resampler
         self.ring = ring
         self.recorder = recorder
+        self.on_frames = on_frames
+        self.timer = timer
         self.stats = PipelineStats()
         self._digest = hashlib.sha256()
 
     def process(self, chunk: SampleChunk) -> Frames:
         """Record, resample and buffer one chunk; return the new frames."""
+        if self.timer is None:
+            return self._process(chunk)
+        with self.timer.measure("ingest"):
+            frames = self._process(chunk)
+        if self.stats.last_sample_age_ms is not None:
+            self.timer.record("sample_age", self.stats.last_sample_age_ms)
+        return frames
+
+    def _process(self, chunk: SampleChunk) -> Frames:
         if self.recorder is not None:
             self.recorder.append(chunk)
         frames = self.resampler.push(chunk)
@@ -73,6 +95,8 @@ class IngestPipeline:
         self._digest.update(frames.time_ns.tobytes())
         self._digest.update(frames.values.tobytes())
         self._digest.update(frames.valid.tobytes())
+        if self.on_frames is not None and len(frames) > 0:
+            self.on_frames(frames)
         return frames
 
     async def run(self, queue: asyncio.Queue[SampleChunk | None]) -> None:
@@ -92,7 +116,12 @@ class IngestPipeline:
         return self._digest.hexdigest()
 
 
-def build_pipeline(config: IngestConfig, recorder: SessionRecorder | None = None) -> IngestPipeline:
+def build_pipeline(
+    config: IngestConfig,
+    recorder: SessionRecorder | None = None,
+    on_frames: Callable[[Frames], None] | None = None,
+    timer: StageTimer | None = None,
+) -> IngestPipeline:
     """Create resampler, ring buffer and pipeline from the ingest config."""
     resampler = Resampler(
         input_channels=config.record_channels,
@@ -102,4 +131,4 @@ def build_pipeline(config: IngestConfig, recorder: SessionRecorder | None = None
         max_gap_ms=config.max_interp_gap_ms,
     )
     ring = RingBuffer(config.ring_capacity_frames, config.resample_channels)
-    return IngestPipeline(resampler, ring, recorder)
+    return IngestPipeline(resampler, ring, recorder, on_frames, timer)

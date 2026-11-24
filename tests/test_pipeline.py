@@ -3,21 +3,27 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
+import socket
+import urllib.request
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
 from airhand.config import IngestConfig
 from airhand.ingest.chunk import Frames, SampleChunk
 from airhand.ingest.http_server import SensorLoggerReceiver
+from airhand.ingest.live import IngestThread, LiveIngest
 from airhand.ingest.pipeline import build_pipeline
 from airhand.ingest.recorder import SessionRecorder, read_session
 from airhand.ingest.replayer import replay
 from airhand.ingest.resampler import resample_offline
 from airhand.ingest.sensor_logger import WRIST_MOTION, WRIST_MOTION_UNITS
+from airhand.latency import StageTimer
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONFIG = IngestConfig.from_yaml(REPO_ROOT / "configs" / "ingest.yaml")
@@ -177,3 +183,50 @@ def test_http_posts_flow_through_pipeline_into_recording(tmp_path: Path) -> None
     np.testing.assert_array_equal(times, T0 + np.arange(9) * PERIOD_NS)
     rotation_x = np.concatenate([c.values[:, 0] for c in session.chunks])
     np.testing.assert_array_equal(rotation_x, np.arange(9.0))
+
+
+def test_pipeline_hands_new_frames_to_the_callback_and_records_timings() -> None:
+    received: list[Frames] = []
+    timer = StageTimer()
+    pipeline = build_pipeline(CONFIG, on_frames=received.append, timer=timer)
+    chunks = watch_like_chunks(4)
+    produced = [pipeline.process(chunk) for chunk in chunks]
+    assert len(received) == sum(1 for f in produced if len(f) > 0)
+    np.testing.assert_array_equal(
+        Frames.concatenate(received, CONFIG.resample_channels).time_ns,
+        Frames.concatenate(produced, CONFIG.resample_channels).time_ns,
+    )
+    summary = timer.summary()
+    assert summary["ingest"]["n"] == 4
+    assert summary["sample_age"]["p50"] == pytest.approx(800.0)
+
+
+def free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return int(s.getsockname()[1])
+
+
+def test_ingest_thread_receives_http_posts_in_the_background(tmp_path: Path) -> None:
+    config = dataclasses.replace(CONFIG, bind_host="127.0.0.1", http_port=free_port())
+    received: list[Frames] = []
+    with SessionRecorder(
+        tmp_path / "bg",
+        channels=config.record_channels,
+        units=WRIST_MOTION_UNITS,
+        info={},
+        flush_interval_s=config.flush_interval_s,
+    ) as recorder:
+        thread = IngestThread(
+            LiveIngest(config, recorder, on_frames=received.append, print_status=False)
+        )
+        thread.start()
+        try:
+            body = sensor_logger_body(1, [wrist(T0 + i * PERIOD_NS, float(i)) for i in range(50)])
+            url = f"http://127.0.0.1:{config.http_port}{config.data_path}"
+            with urllib.request.urlopen(urllib.request.Request(url, data=body)) as response:
+                assert response.status == 200
+        finally:
+            thread.stop()
+    assert sum(len(f) for f in received) > 0
+    assert read_session(tmp_path / "bg").meta["n_samples"] == 50
