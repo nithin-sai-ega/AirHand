@@ -71,16 +71,42 @@ def test_packet_later_than_the_delay_causes_one_underrun_then_recovers() -> None
     assert set(np.diff(later)) == {10}
 
 
-def test_large_backlog_is_skipped_to_keep_latency_bounded() -> None:
-    arrivals = [(0, grid_frames(0, 100)), (1000, grid_frames(100, 500))]  # 5 s at once
-    buf, released = run(arrivals, end_ms=4000)
-    assert buf.n_skips == 1
+def test_backlog_after_a_stall_is_skipped_to_keep_latency_bounded() -> None:
+    # Packet 0 on time; packets 1-4 held up by a 4 s stall and delivered together at 5 s;
+    # packet 5 on time again at 6 s.
+    arrivals = [(0, grid_frames(0, 100))]
+    arrivals += [(5000, grid_frames(100 * k, 100)) for k in range(1, 5)]
+    arrivals += [(6000, grid_frames(500, 100))]
+    buf, released = run(arrivals, end_ms=8000)
+    assert buf.n_skips >= 1
     indices = [i for _, i in released]
     assert indices == sorted(indices)
-    assert indices[-1] == 599  # the newest data is still played
-    after_skip = [t for t, i in released if i >= 100]
-    # After skipping, the newest frame plays `delay` after the backlog arrived.
-    assert after_skip[-1] == 1000 + 800
+    assert len(indices) < 600  # part of the backlog was dropped
+    # Without skipping, packet 5 would wait behind 4 s of backlog. With it, no frame is ever
+    # played more than delay + max_excess after it arrived.
+    assert next(t for t, i in released if i == 500) <= 6000 + 800 + 1000
+
+
+def test_one_large_packet_is_played_not_skipped() -> None:
+    arrivals = [(0, grid_frames(0, 100)), (1000, grid_frames(100, 500))]  # 5 s in one packet
+    buf, released = run(arrivals, end_ms=8000)
+    assert buf.n_skips == 0
+    assert [i for _, i in released] == list(range(600))
+
+
+def test_packets_longer_than_one_second_do_not_cause_skips() -> None:
+    # Like the real stream: 1.02 or 1.53 s of data per packet, one packet every 1-1.5 s.
+    sizes = [102, 153, 102, 153, 153, 102, 153]
+    arrivals, first, now = [], 0, 0
+    for n in sizes:
+        arrivals.append((now, grid_frames(first, n)))
+        first += n
+        now += n * 10  # the phone sends once it has collected the packet's samples
+    buf, released = run(arrivals, end_ms=now + 3000)
+    assert buf.n_skips == 0
+    assert [i for _, i in released] == list(range(first))
+    times = np.array([t for t, _ in released])
+    assert set(np.diff(times)) == {10}
 
 
 def test_nothing_is_released_before_any_data() -> None:

@@ -11,14 +11,18 @@ at laptop monotonic time m0 = now + delay. Every later frame with sensor time t 
     m0 + (t - s0)
 
 so frames come out exactly as far apart as they were recorded (10 ms on the 100 Hz grid).
-The delay must be longer than the worst gap between packets, otherwise the buffer runs dry.
+The delay must cover the worst lateness of a packet relative to the first one, otherwise the
+buffer runs dry.
 
 Two things can go wrong, and both are handled by re-anchoring (choosing a new s0, m0):
-- underrun: a frame is due but has not arrived (the delay was too short for this burst).
+- underrun: a frame is due but has not arrived (the delay was too short for this packet).
   Playback pauses and restarts `delay` after the next packet arrives.
-- overflow: far more than `delay` of data is buffered (e.g. a backlog after a stall, or the
-  watch clock running slightly fast). The oldest frames are skipped so the latency does not
-  keep growing.
+- excess latency: a new packet arrives on time but its first frame is scheduled more than
+  `delay + max_excess` from now. That happens after a stall: the backlog that finally
+  arrives re-anchors playback, and from then on every frame would be played that much later
+  than necessary. The frames still waiting are skipped and the new packet plays `delay` from
+  now, so latency cannot keep growing. (A large packet on its own is not a problem: its
+  frames are simply played over the time they cover.)
 
 The buffer is used by two threads (network receiver pushes, pointer loop pops), so every
 public method takes a lock. Times are passed in explicitly, which makes it testable with a
@@ -61,27 +65,21 @@ class PlayoutBuffer:
         if len(frames) == 0:
             return
         with self._lock:
-            self._frames = Frames.concatenate([self._frames, frames], self.channels)
+            first_new = int(frames.time_ns[0])
             if self._anchor is None or self._starved:
+                self._frames = Frames.concatenate([self._frames, frames], self.channels)
                 self._anchor = (int(self._frames.time_ns[0]), now_ns + self.delay_ns)
                 self._starved = False
-            self._skip_if_too_far_behind(now_ns)
-
-    def _skip_if_too_far_behind(self, now_ns: int) -> None:
-        # Lag = how far the newest frame is ahead of the one being played right now. Right
-        # after a packet arrives it is normally about `delay`; much more means a backlog.
-        assert self._anchor is not None
-        sensor_s0, mono_m0 = self._anchor
-        due_now = sensor_s0 + (now_ns - mono_m0)
-        newest = int(self._frames.time_ns[-1])
-        if newest - due_now <= self.delay_ns + self.max_excess_ns:
-            return
-        # Re-anchor so the newest frame plays `delay` from now, and drop the frames that
-        # would already be overdue under the new timing instead of playing them in a rush.
-        self._anchor = (newest, now_ns + self.delay_ns)
-        first_kept = int((self._frames.time_ns < newest - self.delay_ns).sum())
-        self._frames = self._frames.slice(first_kept, len(self._frames))
-        self.n_skips += 1
+                return
+            sensor_s0, mono_m0 = self._anchor
+            first_new_due = mono_m0 + (first_new - sensor_s0)
+            if first_new_due - (now_ns + self.delay_ns) > self.max_excess_ns:
+                # Skip the frames still waiting and play the new packet `delay` from now.
+                self._frames = frames
+                self._anchor = (first_new, now_ns + self.delay_ns)
+                self.n_skips += 1
+                return
+            self._frames = Frames.concatenate([self._frames, frames], self.channels)
 
     def pop_due(self, now_ns: int) -> Frames:
         """Remove and return every frame whose play time is at or before `now_ns`."""
