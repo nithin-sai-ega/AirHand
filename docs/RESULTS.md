@@ -174,3 +174,103 @@ Ingest pipeline checks on the three Phase 0 recordings, converted to sessions wi
   (3,200 packets, ~0.9 us per sample). Negligible next to the ~1 s transport batching.
 - **Live path:** an end-to-end run of `ingest_live.py` on localhost, fed with 5 real Phase 0
   packets and stopped with Ctrl+Break, recorded all 562 samples and completed the metadata.
+
+## Phase 2
+
+DSP and pointer results on the three Phase 0 recordings (S1 still on the desk; S2 and S3
+normal arm motion), with the settings in `configs/dsp.yaml` and `configs/pointer.yaml`.
+Produced by `scripts/compare_orientation.py` and `scripts/pointer_replay.py`.
+
+### Madgwick vs the watch's own orientation
+
+Madgwick starts from the watch's orientation and then runs on the gyro and accelerometer
+alone, so these numbers show how far the two drift apart.
+
+| Session | Length (s) | Tilt error p50 (deg) | p95 | max | Heading slope (deg/min) | Max heading difference (deg) | Still (%) | Max bias estimate (deg/s) |
+|---|---|---|---|---|---|---|---|---|
+| S1 | 89 | 0.04 | 0.09 | 0.31 | +0.15 | 0.22 | 91 | 0.023 |
+| S2 | 88 | 0.21 | 0.60 | 1.57 | +6.43 | 19.14 | 0 | 0.000 |
+| S3 | 202 | 0.22 | 0.41 | 0.98 | -2.94 | 7.88 | 0 | 0.020 |
+
+![Madgwick vs watch orientation](img/phase2/orientation_vs_watch.png)
+
+- **Tilt** (which way is down) agrees within 0.6 deg at p95 in every session, including fast
+  motion.
+- **Heading** does not drift steadily. It changes in **steps during the fastest movements**
+  (S2 at 6 s, S3 at 125 s) and is nearly flat in between (S3: under 0.2 deg over the first two
+  minutes). Integrating the 100 Hz samples cannot reproduce what Apple's own fusion sees,
+  probably a higher internal sample rate and its own heading corrections. The slope column
+  is therefore not a drift rate. The pointer does not use heading (D-016).
+- **Gyro bias:** Core Motion has already removed it; our estimate stays at or below
+  0.023 deg/s.
+
+Madgwick gain sweep on S3 (why `madgwick_beta` is 0.01):
+
+| beta | Tilt error p50 (deg) | p95 |
+|---|---|---|
+| 0 (gyro only) | 1.05 | 7.72 |
+| 0.01 | 0.21 | 0.41 |
+| 0.04 | 0.27 | 0.67 |
+| 0.1 | 0.39 | 1.12 |
+| 0.3 | 0.69 | 2.28 |
+
+With beta = 0 nothing corrects the tilt and it drifts to 7.7 deg (p95). Too large a beta lets
+arm acceleration be mistaken for gravity.
+
+### Pointer on replayed sessions (clutch forced on)
+
+| Session | Cursor travel | Final offset | Double knocks found |
+|---|---|---|---|
+| S1 (still) | 16 px in 89 s | (1, 3) px | 0 |
+| S2 (motion) | 29,922 px | (-30, -271) px | 0 |
+| S3 (motion) | 10,784 px | (-690, -294) px | 0 |
+
+![Pointer replay on S2](img/phase2/pointer_replay_S2.png)
+
+- With the watch still, the dead zone keeps the cursor practically motionless.
+- The right panel zooms in on the fastest movement. The One Euro output follows the raw
+  integrated position closely during the sweep (little lag at high speed) and smooths small
+  wiggles at rest.
+- **Knock detector false triggers:** none in about 6 minutes of everyday motion. That motion's
+  knock signal reached p99.9 0.38 g and 0.88 g at most against the 0.6 g threshold, so it is
+  the timing rules, not the threshold alone, that prevent false toggles. A recording with
+  deliberate knocks is needed to tune the threshold (open item).
+
+### Playout delay vs smoothness (real packet arrival times)
+
+Each session's recorded packets were fed through the playout buffer at their original
+arrival times with a fake clock (30 s floor window). An underrun is a moment when the next
+frame is due but has not arrived: the cursor pauses, then catches up.
+
+| Delay (s) | S1 underruns (89 s) | S2 underruns (88 s) | S3 underruns (202 s) | Longest pause S1 / S2 / S3 (ms) |
+|---|---|---|---|---|
+| 1.5 | 34 | 34 | 76 | 1255 / 494 / 1382 |
+| 2.0 | 6 | 0 | 4 | 755 / 402 / 1086 |
+| **2.5 (default)** | 3 | 0 | 2 | 343 / 402 / 1046 |
+| 3.0 | 0 | 0 | 1 | 343 / 402 / 546 |
+
+- Packets need about 1.5 s of margin at the median (that is the packet length itself) and
+  1.6-2.5 s at p95. One 3.6 s network stall in S3 causes an underrun at any reasonable
+  delay.
+- The ~400 ms pause in S2 is the start-up, before the floor has settled.
+- **Resulting lag on the free tier:** the newest-sample age floor is about 0.75 s
+  (+/-0.2 s clock offset), so the cursor plays about 0.75 + 2.5 = **~3.2 s behind the
+  hand**, smoothly. The paid 100 ms push would shorten packets and allow a much smaller
+  delay; this needs re-measuring on that tier.
+
+### Processing cost per tick (Intel i7, 100 Hz, one frame per tick, S3)
+
+| Stage | p50 (ms) | p95 (ms) | p99 (ms) |
+|---|---|---|---|
+| DSP (bias, low-pass, Madgwick) | 0.12 | 0.28 | 0.46 |
+| Pointer (mapping, gain, One Euro, knock detector) | 0.21 | 0.48 | 0.74 |
+| Cursor move (GetCursorPos + SendInput) | 0.32 | 0.63 | 1.14 |
+
+Under 1.5 ms per 10 ms tick at p95, in plain Python loops.
+
+### Live path
+
+`pointer_live.py --dry-run --no-dashboard` on localhost, fed with 6 real packets over HTTP
+and stopped with Ctrl+Break: all 663 frames were played back in order at a steady 100 Hz
+through the playout buffer, the session was recorded, and the process exited cleanly. Not yet tested with
+the watch streaming live (owner checklist).

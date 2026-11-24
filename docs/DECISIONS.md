@@ -141,3 +141,90 @@ Each entry records a non-obvious choice, why it was made, and what else was cons
   long-running coroutine did not run when the loop was interrupted by Ctrl+Break. A
   separate stop step on the same event loop runs in every case.
 - **Alternatives:** loop signal handlers (`add_signal_handler` is not supported on Windows).
+
+## Phase 2
+
+### D-015: Adaptive playout (jitter) buffer instead of applying packets immediately
+- **Choice:** each frame is played at `sensor time + floor + playout_delay_s`, where the
+  floor is the smallest (arrival time - newest sample time) over the last
+  `playout_offset_window_s` (30 s). Delay 2.5 s. A packet later than the margin allows is
+  counted as an underrun and its overdue frames are played at once (catch-up).
+- **Why:** packets arrive about once per second (D-007), so applying them directly makes
+  the cursor jump once per second; every sample does arrive, so smoothing costs only delay.
+  The delay must cover the oldest sample of a packet (packets hold up to 1.53 s) plus jitter;
+  on the Phase 0 sessions 2.5 s covered the p95 lateness (sweep in RESULTS.md). A sliding
+  floor follows clock drift between watch timestamps and the laptop clock (about 1 ms/s
+  measured in Phase 0). A test with that drift shows a fixed floor stalling repeatedly
+  while the sliding one does not.
+- **History:** the first version fixed the schedule at the first packet and skipped ahead on
+  backlogs. A live smoke test showed its backlog rule cutting normal 1.5 s packets, and a
+  replay of the real arrival times still showed periodic stalls from drift. Both led to this
+  design.
+- **Alternatives:** apply bursts immediately (jumpy); extrapolate between packets (wrong
+  whenever the hand changes direction, see LEARNING.md); time-stretch playback to absorb
+  jitter (smoother than catch-up bursts, more complex; worth it once delays are small).
+
+### D-016: Pointer axes from gravity, not from the watch's own axes
+- **Choice:** horizontal cursor speed = rotation about "up" (minus gravity); vertical =
+  rotation about the horizontal axis perpendicular to the forearm (`up x forearm_axis`).
+- **Why:** independent of wrist roll (tested: the same world motion at 0, 35, 90 and -60
+  degrees of roll gives the same cursor motion), and wrist roll alone does not move the
+  cursor. The watch reports gravity directly, so the pointer path needs no orientation filter.
+- **Alternatives:** raw gyro axes (simpler, breaks when the forearm rolls); absolute
+  orientation angles as the pointer position (needs heading, which drifts without a
+  magnetometer).
+
+### D-017: Gain curve, then One Euro on the integrated position, then rounding
+- **Choice:** angular velocity -> sigmoid gain curve with a soft dead zone -> velocity
+  integrated into a floating-point position -> One Euro filter -> rounded; the cursor move is
+  the change in the rounded position.
+- **Why:** this is the order in the project brief, and filtering *position* is how the One
+  Euro filter is meant to be used (its speed estimate is then the cursor speed). Rounding the
+  position rather than each step keeps sub-pixel motion (tested). The integrator and filter
+  reset whenever the clutch disengages, so re-engaging never jumps.
+- **Alternatives:** One Euro on the angular velocity before the gain (its adaptation would
+  key off acceleration rather than speed); constant gain (precision vs speed trade-off).
+
+### D-018: Double knock on the desk as the clutch, F8 as backup
+- **Choice (owner's decision):** the pointer starts disengaged; a double knock (high-passed
+  acceleration above 0.6 g twice, 0.12-0.5 s apart, quiet before and after, 1 s cooldown)
+  or the F8 key toggles it.
+- **Why:** hands-free, and a knock is a strong, short spike that plain DSP can separate from
+  arm motion. The watch's own finger-pinch "double tap" is not available through Sensor
+  Logger. This changes the planned roles of the v1 gestures (`circle` was the clutch,
+  `double_tap` something else); the final roles are confirmed in Phase 3.
+- **Alternatives:** a key only (the brief's stand-in; awkward with one hand on the watch); a
+  raise-wrist-to-point posture (no gesture needed, but talking with the hands would move the
+  cursor).
+- **Open:** the threshold is provisional until a recording with deliberate knocks exists.
+  Everyday motion in the Phase 0 sessions reached 0.88 g at most and produced no double
+  knocks.
+
+### D-019: Absolute SendInput moves, per-monitor DPI aware
+- **Choice:** read the cursor position, add the move, clamp to the virtual desktop, send an
+  absolute SendInput move normalised to 0..65535.
+- **Why:** relative moves pass through Windows pointer acceleration, which would stack an
+  unknown second gain curve on ours. DPI awareness keeps the coordinates in real pixels.
+- **Alternatives:** relative SendInput (simpler, double acceleration); `SetCursorPos`
+  (moves the cursor without generating a mouse input event); `pynput` (an extra dependency
+  wrapping the same call).
+
+### D-020: Ingest on its own event loop, a pointer loop thread, Qt in the main thread
+- **Choice:** `IngestThread` runs the aiohttp receiver and pipeline on a private asyncio
+  loop; `PointerEngine` ticks at 100 Hz in another thread; the dashboard reads a locked
+  telemetry snapshot from the main thread at 30 Hz. The playout buffer, stage timer and
+  telemetry are the only shared objects and each takes a lock.
+- **Why:** Qt must own the main thread; a separate pointer loop means a slow redraw can never
+  delay a cursor move. The Phase 1 ring buffer is not read across threads, so it stays
+  lock-free (the Phase 1 report expected to lock it; not needed).
+- **Alternatives:** `qasync` to merge asyncio into Qt's loop (extra dependency, and a slow
+  redraw would then also block the network and the pointer).
+
+### D-021: DSP settings tuned on the Phase 0 recordings
+- **Choice:** stillness threshold 1.0 deg/s (was 2.0) and Madgwick beta 0.01 (was 0.04).
+- **Why:** at 2 deg/s, slow real motion counted as stillness and pulled the bias estimate to
+  0.17 deg/s; at 1 deg/s the still desk recording is still 91 % still and the estimate stays
+  at or below 0.02 deg/s (noise floor about 0.1 deg/s). A beta sweep against the watch's own
+  tilt gave the lowest error at 0.01 (p95 0.41 deg vs 0.67 at 0.04). The reference is
+  Apple's fused attitude, not ground truth.
+- **Alternatives:** keep textbook defaults; retune once more varied recordings exist.
